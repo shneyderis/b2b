@@ -1,61 +1,66 @@
 # Wine Ordering System (HoReCa)
 
-PWA + Telegram Mini App for partners to order wines from the winery.
-Shared backend with a back-office for warehouse managers.
+Minimal web app for HoReCa partners to order wines from the winery.
+
+- **Phase 1 (this repo):** PWA for partners + back-office for managers.
+- **Phase 2 (later):** Telegram Mini App reuses the same React build.
+
+UI language: Ukrainian (українська).
 
 ## Stack
 
-- **Frontend:** React (Vite) + TypeScript + Tailwind CSS
-- **Telegram Mini App:** same React build, uses `@twa-dev/sdk`
-- **Backend:** Node.js + Express + TypeScript
-- **Database:** PostgreSQL (Supabase-compatible)
-- **PDF:** `pdfkit`
-- **Auth:** email + password (bcrypt + JWT); Telegram `initData` validation
-- **Deploy:** Vercel (static web + serverless API)
+- **Frontend:** React (Vite) + TypeScript + Tailwind CSS, PWA (manifest + service worker)
+- **Backend:** Node.js + Express + TypeScript (deployable as Vercel serverless)
+- **Database:** PostgreSQL (Supabase free tier)
+- **PDF:** `pdfkit` (generated on-demand via `GET /api/orders/:id/pdf`)
+- **Auth:** email + password (bcrypt + JWT)
+- **Notifications:** Telegram Bot API, outbound only (no webhook, no bot service)
+
+## Self-registration flow
+
+1. Partner opens a registration link (distributed by the winery).
+2. Fills a form: company name, contact name, phone, email, password.
+3. An entry is created with `partners.status = 'pending'`.
+4. Admin reviews in the back-office and approves or rejects.
+5. Only `approved` partners can log in and place orders.
 
 ## Layout
 
 ```
 server/       Express API + migrations + seed
-web/          Vite React app (PWA + TMA)
+web/          Vite React PWA (Ukrainian UI)
 ```
 
 ## Quick start
 
 ```bash
-# 1. Create a Postgres DB (local or Supabase) and copy env
 cp .env.example .env
-# fill DATABASE_URL, JWT_SECRET, TELEGRAM_BOT_TOKEN…
+# fill DATABASE_URL, JWT_SECRET, TELEGRAM_*, VITE_MANAGER_*
 
-# 2. Install
 npm install --workspaces
-
-# 3. Apply schema & seed
 npm run -w server migrate
-npm run -w server seed
-
-# 4. Run API + web in parallel
-npm run -w server dev   # :3001
-npm run -w web    dev   # :5173 (proxy to :3001)
+npm run -w server seed       # demo partners + 19 wines + admin user
+npm run -w server dev        # API on :3001
+npm run -w web    dev        # Web on :5173
 ```
 
 Seed admin: `admin@winery.com` / `admin123`.
 
 ## API surface
 
-See `server/src/routes/*`. Summary:
-
-- `POST /api/auth/login`, `POST /api/auth/telegram`
-- `GET/PUT /api/profile`
+- `POST /api/auth/login`
+- `POST /api/auth/register` — partner self-registration (status=pending)
+- `GET/PUT  /api/profile`
 - `GET/POST/PUT/DELETE /api/addresses`
-- `GET /api/wines`
-- `GET/POST/PUT/DELETE /api/orders`
-- `POST /api/messages`
-- `GET /api/admin/orders`, `PUT /api/admin/orders/:id/status`, `GET /api/admin/orders/:id/pdf`
-- `GET/POST/PUT /api/admin/wines`, `GET/POST/PUT /api/admin/partners`
-- `POST /api/admin/broadcast`
+- `GET     /api/wines`
+- `GET/POST/PUT/DELETE /api/orders`, `GET /api/orders/:id/pdf`
+- `GET     /api/admin/orders`, `PUT /api/admin/orders/:id`, `PUT /api/admin/orders/:id/status`, `DELETE /api/admin/orders/:id`, `GET /api/admin/orders/:id/pdf`
+- `GET/POST/PUT /api/admin/wines`
+- `GET/POST/PUT /api/admin/partners`, `PUT /api/admin/partners/:id/status` (approve / reject)
 
 ## Deploy
 
-`vercel.json` is pre-configured: the web app builds to `web/dist`, API routes
-are mounted from `server/api/*` (serverless functions).
+`vercel.json` serves the Vite build from `web/dist` and mounts API routes as
+serverless functions.
+
+See **`INSTALL_PWA.md`** for partner-facing install instructions (iOS / Android).
