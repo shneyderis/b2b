@@ -112,7 +112,12 @@ export function Orders() {
                     </span>
                   </div>
                   <div className="text-sm text-neutral-600 mt-1 truncate">{o.address_label}</div>
-                  <div className="text-xs text-neutral-500 mt-0.5">{formatDate(o.created_at)}</div>
+                  <div className="text-xs text-neutral-500 mt-0.5">
+                    Створено: {formatDate(o.created_at)}
+                    {o.updated_at && o.updated_at !== o.created_at && (
+                      <> · Оновлено: {formatDate(o.updated_at)}</>
+                    )}
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="font-semibold">{formatMoney(o.total_amount)} ₴</div>

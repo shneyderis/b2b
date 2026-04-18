@@ -5,12 +5,6 @@ import type { Address, Profile as ProfileData } from '../types';
 
 const ADDRS_TTL = 2 * 60 * 1000;
 
-function formatDiscount(v: string | number | undefined) {
-  if (v === undefined || v === null || v === '') return '0';
-  const n = Number(v);
-  return Number.isFinite(n) ? n.toString() : String(v);
-}
-
 export function Profile() {
   const [data, setData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,10 +87,6 @@ function ProfileForm({ data, onSaved }: { data: ProfileData; onSaved: (p: Profil
           <span className="text-sm text-neutral-600">Email</span>
           <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </label>
-        <div className="flex items-center justify-between bg-burgundy-50 border border-burgundy-100 rounded-lg p-3">
-          <span className="text-sm text-neutral-700">Знижка</span>
-          <span className="text-burgundy-700 font-semibold">{formatDiscount(data.partner?.discount_percent)}%</span>
-        </div>
         {msg && (
           <div
             className={`text-sm rounded-lg p-2 border ${
