@@ -7,16 +7,14 @@ import { Register } from './pages/Register';
 import { Profile } from './pages/Profile';
 import { Orders } from './pages/Orders';
 import { OrderDetail } from './pages/OrderDetail';
+import { NewOrder } from './pages/NewOrder';
+import { EditOrder } from './pages/EditOrder';
 
 function RootRedirect() {
   const { token, role } = useAuth();
   if (!token) return <Navigate to="/login" replace />;
   if (role === 'admin') return <Navigate to="/admin" replace />;
   return <Navigate to="/orders" replace />;
-}
-
-function Placeholder({ title }: { title: string }) {
-  return <div className="card">{title}</div>;
 }
 
 export function App() {
@@ -46,7 +44,7 @@ export function App() {
               path="/orders/new"
               element={
                 <ProtectedRoute role="partner">
-                  <Placeholder title="Нове замовлення (п.5d)" />
+                  <NewOrder />
                 </ProtectedRoute>
               }
             />
@@ -62,7 +60,7 @@ export function App() {
               path="/orders/:id/edit"
               element={
                 <ProtectedRoute role="partner">
-                  <Placeholder title="Редагування замовлення (п.5d)" />
+                  <EditOrder />
                 </ProtectedRoute>
               }
             />
