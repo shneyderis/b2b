@@ -58,9 +58,70 @@ Seed admin: `admin@winery.com` / `admin123`.
 - `GET/POST/PUT /api/admin/wines`
 - `GET/POST/PUT /api/admin/partners`, `PUT /api/admin/partners/:id/status` (approve / reject)
 
-## Deploy
+## Deploy (Vercel)
 
-`vercel.json` serves the Vite build from `web/dist` and mounts API routes as
-serverless functions.
+The root `vercel.json` builds the Vite SPA into `web/dist` and mounts the
+Express app as a single serverless function at `api/[...path].ts`. The
+function re-exports the Express instance returned by `createApp()` in
+`server/src/index.ts`; local dev still uses `server/src/dev.ts`
+(`tsx watch src/dev.ts`).
 
-See **`INSTALL_PWA.md`** for partner-facing install instructions (iOS / Android).
+### Required Vercel env vars
+
+| name | value |
+|---|---|
+| `DATABASE_URL` | Supabase **Transaction Pooler** URL, port **6543** |
+| `DIRECT_DATABASE_URL` | Supabase Direct / Session Pooler URL, port **5432** |
+| `JWT_SECRET` | any long random string |
+| `TELEGRAM_BOT_TOKEN` | BotFather token (outbound notifications) |
+| `TELEGRAM_MANAGERS_CHAT_ID` | group id where orders are posted |
+| `VITE_MANAGER_TELEGRAM_URL` | https://t.me/… (footer link) |
+| `VITE_MANAGER_WHATSAPP_URL` | https://wa.me/… (footer link) |
+
+⚠️ **Use the Transaction Pooler for `DATABASE_URL`.** Each serverless
+invocation opens its own PG client; at ~100 partners the free-tier limit
+(≈60 connections) is reached in seconds without pgbouncer.
+(Supabase → Settings → Database → Connection Pooling → *Transaction*.)
+
+The migrate and seed scripts bypass pgbouncer and require
+`DIRECT_DATABASE_URL` (pgbouncer in transaction mode breaks some DDL and
+prepared statements).
+
+### First deploy — run migrations against Supabase
+
+Migrations are not run automatically on every deploy. From a checkout with
+`.env` populated (or inline):
+
+```bash
+DIRECT_DATABASE_URL="postgresql://postgres.xxxx:pwd@aws-0-region.pooler.supabase.com:5432/postgres" \
+  npm run -w server migrate
+
+DIRECT_DATABASE_URL="postgresql://postgres.xxxx:pwd@aws-0-region.pooler.supabase.com:5432/postgres" \
+  npm run -w server seed
+```
+
+Re-run only when schema changes. Seed wipes tables and must not be run in
+production after real data exists.
+
+### Smoke test
+
+Local:
+
+```bash
+npm install
+npm run -w web build
+vercel dev       # requires Vercel CLI + `vercel link`
+curl http://localhost:3000/api/health
+```
+
+Production (after deploy):
+
+1. `GET https://<app>.vercel.app/api/health` → `{"ok":true}`
+2. `POST /api/auth/login` with `admin@winery.com` / `admin123` → token
+3. `GET /api/wines` with `Authorization: Bearer <token>` → 19 wines
+4. Open `https://<app>.vercel.app/` → login page, then full flow
+
+## Partner onboarding
+
+See **[INSTALL_PWA.md](./INSTALL_PWA.md)** — short UA guide for partners on
+how to add the app to their home screen (iOS Safari / Android Chrome).

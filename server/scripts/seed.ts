@@ -1,5 +1,19 @@
+import 'dotenv/config';
 import bcrypt from 'bcryptjs';
-import { pool } from '../src/db.js';
+import pg from 'pg';
+
+const connectionString = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('Missing DIRECT_DATABASE_URL (preferred) or DATABASE_URL');
+  process.exit(1);
+}
+
+const pool = new pg.Pool({
+  connectionString,
+  ssl: connectionString.includes('supabase.com') || connectionString.includes('supabase.co')
+    ? { rejectUnauthorized: false }
+    : undefined,
+});
 
 const WINES = [
   'Амфора Рислінг',

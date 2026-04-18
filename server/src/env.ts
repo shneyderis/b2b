@@ -8,6 +8,7 @@ function required(name: string): string {
 
 export const env = {
   DATABASE_URL: required('DATABASE_URL'),
+  DIRECT_DATABASE_URL: process.env.DIRECT_DATABASE_URL || '',
   JWT_SECRET: required('JWT_SECRET'),
   PORT: Number(process.env.PORT) || 3001,
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',

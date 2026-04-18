@@ -1,7 +1,21 @@
+import 'dotenv/config';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pool } from '../src/db.js';
+import pg from 'pg';
+
+const connectionString = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('Missing DIRECT_DATABASE_URL (preferred) or DATABASE_URL');
+  process.exit(1);
+}
+
+const pool = new pg.Pool({
+  connectionString,
+  ssl: connectionString.includes('supabase.com') || connectionString.includes('supabase.co')
+    ? { rejectUnauthorized: false }
+    : undefined,
+});
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dir = join(__dirname, '..', 'migrations');
