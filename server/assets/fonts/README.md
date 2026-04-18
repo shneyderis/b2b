@@ -1,13 +1,17 @@
 # Fonts for PDF generation
 
-PDFKit ships with Helvetica which does not cover Cyrillic. To render Ukrainian
-correctly in generated PDFs, drop Unicode TTF files here:
+PDFKit ships with Helvetica which does not cover Cyrillic. To render
+Ukrainian correctly in generated PDFs, the server loads:
 
 - `NotoSans-Regular.ttf`
-- `NotoSans-Bold.ttf`  (optional but recommended)
+- `NotoSans-Bold.ttf`
 
-Any Unicode TTF works — Noto Sans is public domain and covers Cyrillic well.
-Download from <https://fonts.google.com/noto/specimen/Noto+Sans>.
+Both files are committed next to this README and are included in the Vercel
+serverless bundle via `vercel.json` (`includeFiles: "server/**"`).
 
-If the font files are absent the server falls back to Helvetica and
-Cyrillic characters will appear as boxes.
+Noto Sans is licensed under the SIL Open Font License 1.1 — free to
+redistribute. Sourced from
+<https://github.com/googlefonts/noto-fonts/tree/main/hinted/ttf/NotoSans>.
+
+If the files are ever removed, `server/src/pdf.ts` falls back to Helvetica
+and Cyrillic characters render as mojibake.
