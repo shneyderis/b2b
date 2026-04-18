@@ -1,0 +1,13 @@
+{
+  "buildCommand": "npm run -w web build",
+  "outputDirectory": "web/dist",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/[...path].ts": {
+      "includeFiles": "server/**"
+    }
+  }
+}
