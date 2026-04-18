@@ -5,6 +5,8 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Profile } from './pages/Profile';
+import { Orders } from './pages/Orders';
+import { OrderDetail } from './pages/OrderDetail';
 
 function RootRedirect() {
   const { token, role } = useAuth();
@@ -36,7 +38,7 @@ export function App() {
               path="/orders"
               element={
                 <ProtectedRoute role="partner">
-                  <Placeholder title="Замовлення (п.5c)" />
+                  <Orders />
                 </ProtectedRoute>
               }
             />
@@ -52,7 +54,7 @@ export function App() {
               path="/orders/:id"
               element={
                 <ProtectedRoute role="partner">
-                  <Placeholder title="Деталь замовлення (п.5c)" />
+                  <OrderDetail />
                 </ProtectedRoute>
               }
             />
