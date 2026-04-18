@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api';
-import type { OrderListItem, OrderStatus } from '../types';
+import { cacheGet, cacheSet } from '../cache';
+import type { Address, OrderListItem, OrderStatus, Wine } from '../types';
 import { STATUS_COLORS, STATUS_LABELS, formatDate, formatMoney } from '../format';
+
+const WINES_TTL = 5 * 60 * 1000;
+const ADDRS_TTL = 2 * 60 * 1000;
+
+function prefetchOrderFormData() {
+  if (!cacheGet<Wine[]>('wines')) {
+    api<Wine[]>('/wines').then((w) => cacheSet('wines', w, WINES_TTL)).catch(() => {});
+  }
+  if (!cacheGet<Address[]>('addresses')) {
+    api<Address[]>('/addresses').then((a) => cacheSet('addresses', a, ADDRS_TTL)).catch(() => {});
+  }
+}
 
 const STATUSES: OrderStatus[] = ['new', 'confirmed', 'shipped', 'delivered', 'cancelled'];
 
@@ -12,6 +25,10 @@ export function Orders() {
   const [items, setItems] = useState<OrderListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    prefetchOrderFormData();
+  }, []);
 
   useEffect(() => {
     let active = true;

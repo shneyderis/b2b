@@ -13,6 +13,7 @@ r.get('/', async (req, res) => {
       ORDER BY is_default DESC, created_at`,
     [req.user!.pid]
   );
+  res.setHeader('Cache-Control', 'private, max-age=30, stale-while-revalidate=120');
   res.json(rows);
 });
 

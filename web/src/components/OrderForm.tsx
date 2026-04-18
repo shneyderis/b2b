@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
+import { cacheGet, cacheSet } from '../cache';
 import type { Address, OrderDetail, Wine } from '../types';
 import { formatMoney } from '../format';
 
@@ -18,14 +19,23 @@ interface Props {
 
 type Qty = Record<string, number>;
 
+const WINES_TTL = 5 * 60 * 1000;
+const ADDRS_TTL = 2 * 60 * 1000;
+
 export function OrderForm({ orderId, initial, submitLabel }: Props) {
   const navigate = useNavigate();
-  const [addresses, setAddresses] = useState<Address[]>([]);
-  const [wines, setWines] = useState<Wine[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedAddrs = cacheGet<Address[]>('addresses');
+  const cachedWines = cacheGet<Wine[]>('wines');
+  const [addresses, setAddresses] = useState<Address[]>(cachedAddrs ?? []);
+  const [wines, setWines] = useState<Wine[]>(cachedWines ?? []);
+  const [loading, setLoading] = useState(!cachedAddrs && !cachedWines);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [addressId, setAddressId] = useState<string>(initial?.delivery_address_id ?? '');
+  const [addressId, setAddressId] = useState<string>(() => {
+    if (initial?.delivery_address_id) return initial.delivery_address_id;
+    const def = cachedAddrs?.find((x) => x.is_default) ?? cachedAddrs?.[0];
+    return def?.id ?? '';
+  });
   const [comment, setComment] = useState<string>(initial?.comment ?? '');
   const [qty, setQty] = useState<Qty>(() => {
     const q: Qty = {};
@@ -42,13 +52,18 @@ export function OrderForm({ orderId, initial, submitLabel }: Props) {
         if (!active) return;
         setAddresses(a);
         setWines(w);
+        cacheSet('addresses', a, ADDRS_TTL);
+        cacheSet('wines', w, WINES_TTL);
         if (!initial) {
-          const def = a.find((x) => x.is_default) ?? a[0];
-          if (def) setAddressId(def.id);
+          setAddressId((current) => {
+            if (current && a.some((x) => x.id === current)) return current;
+            const def = a.find((x) => x.is_default) ?? a[0];
+            return def?.id ?? '';
+          });
         }
       })
       .catch(() => {
-        if (active) setLoadError('Не вдалося завантажити дані.');
+        if (active && !cachedAddrs) setLoadError('Не вдалося завантажити дані.');
       })
       .finally(() => {
         if (active) setLoading(false);

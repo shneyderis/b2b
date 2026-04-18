@@ -12,6 +12,7 @@ r.get('/', async (_req, res) => {
        FROM wines WHERE is_active = TRUE
       ORDER BY (stock_quantity > 0) DESC, sort_order, name`
   );
+  res.setHeader('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
   res.json(rows);
 });
 
