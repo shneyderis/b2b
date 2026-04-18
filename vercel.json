@@ -2,10 +2,11 @@
   "buildCommand": "npm run -w web build",
   "outputDirectory": "web/dist",
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/[...path].ts": {
+    "api/index.ts": {
       "includeFiles": "server/**"
     }
   }
