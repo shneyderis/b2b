@@ -47,6 +47,7 @@ export interface OrderListItem {
   status: OrderStatus;
   total_amount: string | number;
   created_at: string;
+  updated_at: string;
   address_label: string;
 }
 

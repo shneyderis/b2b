@@ -1,6 +1,19 @@
 const TOKEN_KEY = 'winery_token';
 const ROLE_KEY = 'winery_role';
 
+function clearSessionCache() {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith('winery_cache:')) keys.push(k);
+    }
+    for (const k of keys) sessionStorage.removeItem(k);
+  } catch {
+    // ignore
+  }
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -8,11 +21,13 @@ export function getToken(): string | null {
 export function setAuth(token: string, role: string) {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(ROLE_KEY, role);
+  clearSessionCache();
 }
 
 export function clearAuth() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(ROLE_KEY);
+  clearSessionCache();
 }
 
 export function getRole(): string | null {

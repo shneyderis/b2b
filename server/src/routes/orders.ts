@@ -44,7 +44,8 @@ function applyDiscount(price: number, discountPercent: number) {
 r.get('/', async (req, res) => {
   const { status } = req.query;
   const params: any[] = [req.user!.pid];
-  let sql = `SELECT o.id, o.order_number, o.status, o.total_amount, o.created_at,
+  let sql = `SELECT o.id, o.order_number, o.status, o.total_amount,
+                    o.created_at, o.updated_at,
                     da.label AS address_label
                FROM orders o
                JOIN delivery_addresses da ON da.id = o.delivery_address_id

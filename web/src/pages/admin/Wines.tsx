@@ -26,16 +26,6 @@ export function AdminWines() {
     }
   }
 
-  async function patch(id: string, body: Partial<AdminWine>) {
-    try {
-      const row = await api<AdminWine>(`/admin/wines/${id}`, { method: 'PUT', body });
-      setWines((prev) => prev.map((w) => (w.id === id ? row : w)));
-    } catch {
-      alert('Не вдалося зберегти.');
-      await load();
-    }
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -62,7 +52,18 @@ export function AdminWines() {
             </thead>
             <tbody>
               {wines.map((w) => (
-                <WineRow key={w.id} wine={w} onPatch={patch} />
+                <tr key={w.id} className={`border-t border-neutral-200 ${!w.is_active ? 'opacity-60' : ''}`}>
+                  <td className="px-3 py-2">{w.name}</td>
+                  <td className="px-3 py-2 text-right">{formatMoney(w.price)}</td>
+                  <td className="px-3 py-2 text-right">{w.stock_quantity}</td>
+                  <td className="px-3 py-2 text-center">
+                    {w.is_active ? (
+                      <span className="text-xs rounded-full px-2 py-0.5 bg-green-50 text-green-700 border border-green-200">так</span>
+                    ) : (
+                      <span className="text-xs rounded-full px-2 py-0.5 bg-neutral-100 text-neutral-600 border border-neutral-200">ні</span>
+                    )}
+                  </td>
+                </tr>
               ))}
             </tbody>
           </table>
@@ -79,87 +80,6 @@ export function AdminWines() {
         />
       )}
     </div>
-  );
-}
-
-function WineRow({ wine, onPatch }: { wine: AdminWine; onPatch: (id: string, body: Partial<AdminWine>) => Promise<void> }) {
-  const [price, setPrice] = useState<string>(String(wine.price));
-  const [stock, setStock] = useState<string>(String(wine.stock_quantity));
-
-  useEffect(() => {
-    setPrice(String(wine.price));
-    setStock(String(wine.stock_quantity));
-  }, [wine.price, wine.stock_quantity]);
-
-  function commitPrice() {
-    const n = Number(price.replace(',', '.'));
-    if (!Number.isFinite(n) || n < 0) {
-      setPrice(String(wine.price));
-      return;
-    }
-    if (n === Number(wine.price)) return;
-    void onPatch(wine.id, { price: n });
-  }
-
-  function commitStock() {
-    const n = Math.floor(Number(stock));
-    if (!Number.isFinite(n) || n < 0) {
-      setStock(String(wine.stock_quantity));
-      return;
-    }
-    if (n === wine.stock_quantity) return;
-    void onPatch(wine.id, { stock_quantity: n });
-  }
-
-  return (
-    <tr className={`border-t border-neutral-200 ${!wine.is_active ? 'opacity-60' : ''}`}>
-      <td className="px-3 py-2">{wine.name}</td>
-      <td className="px-3 py-2">
-        <input
-          type="text"
-          inputMode="decimal"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          onBlur={commitPrice}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-          }}
-          className="h-10 w-full px-2 text-right rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
-        />
-        <div className="text-xs text-neutral-400 text-right">{formatMoney(wine.price)} ₴</div>
-      </td>
-      <td className="px-3 py-2">
-        <input
-          type="number"
-          min={0}
-          step={1}
-          value={stock}
-          onChange={(e) => setStock(e.target.value)}
-          onBlur={commitStock}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-          }}
-          className="h-10 w-full px-2 text-right rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
-        />
-      </td>
-      <td className="px-3 py-2 text-center">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={wine.is_active}
-          onClick={() => onPatch(wine.id, { is_active: !wine.is_active })}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-            wine.is_active ? 'bg-burgundy-700' : 'bg-neutral-300'
-          }`}
-        >
-          <span
-            className={`inline-block h-5 w-5 rounded-full bg-white transition ${
-              wine.is_active ? 'translate-x-5' : 'translate-x-1'
-            }`}
-          />
-        </button>
-      </td>
-    </tr>
   );
 }
 
