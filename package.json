@@ -2,6 +2,7 @@
   "name": "winery-b2b",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "workspaces": ["server", "web"],
   "scripts": {
     "dev": "npm-run-all -p dev:*",
