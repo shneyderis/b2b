@@ -5,6 +5,7 @@ import authRoutes from './routes/auth.js';
 import profileRoutes from './routes/profile.js';
 import addressRoutes from './routes/addresses.js';
 import wineRoutes from './routes/wines.js';
+import orderRoutes from './routes/orders.js';
 
 const app = express();
 app.use(cors());
@@ -15,6 +16,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/wines', wineRoutes);
+app.use('/api/orders', orderRoutes);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
