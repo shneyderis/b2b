@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { Profile } from './pages/Profile';
 
 function RootRedirect() {
   const { token, role } = useAuth();
@@ -67,7 +68,7 @@ export function App() {
               path="/profile"
               element={
                 <ProtectedRoute role="partner">
-                  <Placeholder title="Профіль (п.5b)" />
+                  <Profile />
                 </ProtectedRoute>
               }
             />
