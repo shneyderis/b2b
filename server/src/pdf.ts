@@ -1,6 +1,22 @@
 import PDFDocument from 'pdfkit';
 import type { Response } from 'express';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { one, query } from './db.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const FONT_REG = join(__dirname, '..', 'assets', 'fonts', 'NotoSans-Regular.ttf');
+const FONT_BOLD = join(__dirname, '..', 'assets', 'fonts', 'NotoSans-Bold.ttf');
+const HAS_UA_FONT = existsSync(FONT_REG);
+
+function useFont(doc: PDFKit.PDFDocument, variant: 'reg' | 'bold') {
+  if (HAS_UA_FONT) {
+    doc.font(variant === 'bold' && existsSync(FONT_BOLD) ? FONT_BOLD : FONT_REG);
+  } else {
+    doc.font(variant === 'bold' ? 'Helvetica-Bold' : 'Helvetica');
+  }
+}
 
 const STATUS_LABELS: Record<string, string> = {
   new: 'Новий',
@@ -64,39 +80,41 @@ export async function streamOrderPdf(orderId: string, res: Response): Promise<vo
 
   const doc = new PDFDocument({ size: 'A4', margin: 40 });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader(
-    'Content-Disposition',
-    `inline; filename="order-${order.order_number}.pdf"`
-  );
+  res.setHeader('Content-Disposition', `inline; filename="order-${order.order_number}.pdf"`);
   doc.pipe(res);
 
-  // Header — logo placeholder
-  doc.fontSize(18).text('Винарня — Замовлення', { align: 'left' });
+  useFont(doc, 'bold');
+  doc.fontSize(18).text('Винарня — Замовлення');
+  useFont(doc, 'reg');
   doc.moveDown(0.2);
-  doc.fontSize(10).fillColor('#666')
-     .text('[ logo placeholder ]', { align: 'left' });
-  doc.fillColor('#000');
-  doc.moveDown(0.5);
+  doc.fontSize(10).fillColor('#888').text('[ logo placeholder ]');
+  doc.fillColor('#000').moveDown(0.5);
 
+  useFont(doc, 'bold');
   doc.fontSize(14).text(`№ ${order.order_number}`);
+  useFont(doc, 'reg');
   doc.fontSize(10).text(`Створено: ${fmtDate(order.created_at)}`);
   doc.text(`Статус: ${STATUS_LABELS[order.status] ?? order.status} (${fmtDate(order.updated_at)})`);
   doc.moveDown(0.5);
 
-  doc.fontSize(12).text('Партнер', { underline: true });
+  useFont(doc, 'bold');
+  doc.fontSize(12).text('Партнер');
+  useFont(doc, 'reg');
   doc.fontSize(10).text(order.partner_name);
   if (order.user_contact) doc.text(`Контакт: ${order.user_contact}`);
   if (order.user_phone) doc.text(`Телефон: ${order.user_phone}`);
   doc.moveDown(0.5);
 
-  doc.fontSize(12).text('Адреса доставки', { underline: true });
+  useFont(doc, 'bold');
+  doc.fontSize(12).text('Адреса доставки');
+  useFont(doc, 'reg');
   doc.fontSize(10).text(order.address_label);
   doc.text(order.address_text);
   doc.moveDown(0.5);
 
-  // Items table
   const tableTop = doc.y + 6;
   const cols = { n: 40, name: 70, qty: 340, price: 410, sum: 480 };
+  useFont(doc, 'bold');
   doc.fontSize(10).fillColor('#555');
   doc.text('#', cols.n, tableTop);
   doc.text('Найменування', cols.name, tableTop);
@@ -105,6 +123,7 @@ export async function streamOrderPdf(orderId: string, res: Response): Promise<vo
   doc.text('Сума', cols.sum, tableTop, { width: 70, align: 'right' });
   doc.fillColor('#000');
   doc.moveTo(40, tableTop + 14).lineTo(555, tableTop + 14).strokeColor('#aaa').stroke().strokeColor('#000');
+  useFont(doc, 'reg');
 
   let y = tableTop + 20;
   items.forEach((it, i) => {
@@ -115,16 +134,15 @@ export async function streamOrderPdf(orderId: string, res: Response): Promise<vo
     doc.text(money(it.price), cols.price, y, { width: 60, align: 'right' });
     doc.text(money(sum), cols.sum, y, { width: 70, align: 'right' });
     y = doc.y + 6;
-    if (y > 760) {
-      doc.addPage();
-      y = 60;
-    }
+    if (y > 760) { doc.addPage(); y = 60; }
   });
 
   doc.moveTo(40, y + 2).lineTo(555, y + 2).strokeColor('#aaa').stroke().strokeColor('#000');
   y += 10;
+  useFont(doc, 'bold');
   doc.fontSize(12).text('Разом:', cols.price - 40, y, { width: 100, align: 'right' });
   doc.text(money(order.total_amount), cols.sum, y, { width: 70, align: 'right' });
+  useFont(doc, 'reg');
 
   if (order.comment) {
     doc.moveDown(1.5).fontSize(10).fillColor('#555').text('Коментар:', 40);
