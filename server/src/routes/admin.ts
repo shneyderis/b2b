@@ -97,6 +97,13 @@ r.put('/orders/:id', async (req, res) => {
       );
     }
     if (p.data.items) {
+      const partner = await one<{ discount_percent: string }>(
+        `SELECT pa.discount_percent
+           FROM orders o JOIN partners pa ON pa.id = o.partner_id
+          WHERE o.id = $1`,
+        [req.params.id]
+      );
+      const discount = Number(partner?.discount_percent ?? 0);
       const ids = p.data.items.map((i) => i.wine_id);
       const wines = await query<{ id: string; price: string }>(
         `SELECT id, price FROM wines WHERE id = ANY($1::uuid[])`,
@@ -106,7 +113,8 @@ r.put('/orders/:id', async (req, res) => {
       await client.query(`DELETE FROM order_items WHERE order_id = $1`, [req.params.id]);
       let total = 0;
       for (const it of p.data.items) {
-        const price = it.price ?? wineMap.get(it.wine_id) ?? 0;
+        const base = wineMap.get(it.wine_id) ?? 0;
+        const price = Math.round(base * (100 - discount)) / 100;
         total += price * it.quantity;
         await client.query(
           `INSERT INTO order_items (order_id, wine_id, quantity, price) VALUES ($1, $2, $3, $4)`,

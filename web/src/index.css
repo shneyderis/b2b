@@ -12,6 +12,12 @@ body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+  main { max-width: none !important; padding: 0 !important; }
+}
+
 @layer components {
   .btn-primary {
     @apply h-12 px-4 rounded-lg bg-burgundy-700 text-white font-medium disabled:opacity-50 active:bg-burgundy-600;

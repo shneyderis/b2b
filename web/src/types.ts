@@ -70,3 +70,52 @@ export interface OrderDetail {
   address_text: string;
   items: OrderItem[];
 }
+
+export interface AdminOrderListItem {
+  id: string;
+  order_number: number | string;
+  status: OrderStatus;
+  total_amount: string | number;
+  created_at: string;
+  partner_name: string;
+  user_contact: string | null;
+  address_label: string;
+}
+
+export interface AdminOrderDetail extends OrderDetail {
+  partner_id: string;
+  partner_name: string;
+  discount_percent: string | number;
+  user_contact: string | null;
+  user_phone: string | null;
+  user_email: string;
+}
+
+export interface AdminWine {
+  id: string;
+  name: string;
+  price: string | number;
+  stock_quantity: number;
+  sort_order: number;
+  is_active: boolean;
+  created_at?: string;
+}
+
+export interface AdminPartnerUser {
+  id: string;
+  email: string;
+  phone: string | null;
+  contact_name: string | null;
+  telegram_id: string | null;
+}
+
+export interface AdminPartner {
+  id: string;
+  name: string;
+  discount_percent: string | number;
+  status: PartnerStatus;
+  notes: string | null;
+  created_at: string;
+  users: AdminPartnerUser[];
+  addresses: Address[];
+}

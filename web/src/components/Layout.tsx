@@ -20,7 +20,7 @@ export function Layout() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="bg-white border-b border-neutral-200 sticky top-0 z-10">
+      <header className="bg-white border-b border-neutral-200 sticky top-0 z-10 no-print">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-burgundy-700 text-xl font-bold tracking-tight">Winery</span>
@@ -31,20 +31,27 @@ export function Layout() {
           </button>
         </div>
         {role === 'partner' && (
-          <nav className="max-w-3xl mx-auto px-4 pb-2 flex gap-2 overflow-x-auto">
+          <nav className="max-w-3xl mx-auto px-4 pb-2 flex gap-2 overflow-x-auto no-print">
             <NavLink to="/orders" className={navLinkCls}>Замовлення</NavLink>
             <NavLink to="/orders/new" className={navLinkCls}>Нове замовлення</NavLink>
             <NavLink to="/profile" className={navLinkCls}>Профіль</NavLink>
           </nav>
         )}
+        {role === 'admin' && (
+          <nav className="max-w-5xl mx-auto px-4 pb-2 flex gap-2 overflow-x-auto no-print">
+            <NavLink to="/admin/orders" className={navLinkCls}>Замовлення</NavLink>
+            <NavLink to="/admin/wines" className={navLinkCls}>Вина</NavLink>
+            <NavLink to="/admin/partners" className={navLinkCls}>Партнери</NavLink>
+          </nav>
+        )}
       </header>
 
-      <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-4">
+      <main className={`flex-1 w-full mx-auto px-4 py-4 ${role === 'admin' ? 'max-w-5xl' : 'max-w-3xl'}`}>
         <Outlet />
       </main>
 
       {role === 'partner' && (tgUrl || waUrl) && (
-        <footer className="bg-white border-t border-neutral-200 sticky bottom-0">
+        <footer className="bg-white border-t border-neutral-200 sticky bottom-0 no-print">
           <div className="max-w-3xl mx-auto px-4 py-3 flex gap-2">
             {tgUrl && (
               <a

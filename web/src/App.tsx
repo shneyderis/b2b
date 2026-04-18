@@ -9,11 +9,15 @@ import { Orders } from './pages/Orders';
 import { OrderDetail } from './pages/OrderDetail';
 import { NewOrder } from './pages/NewOrder';
 import { EditOrder } from './pages/EditOrder';
+import { AdminOrders } from './pages/admin/Orders';
+import { AdminOrderDetail } from './pages/admin/OrderDetail';
+import { AdminWines } from './pages/admin/Wines';
+import { AdminPartners } from './pages/admin/Partners';
 
 function RootRedirect() {
   const { token, role } = useAuth();
   if (!token) return <Navigate to="/login" replace />;
-  if (role === 'admin') return <Navigate to="/admin" replace />;
+  if (role === 'admin') return <Navigate to="/admin/orders" replace />;
   return <Navigate to="/orders" replace />;
 }
 
@@ -69,6 +73,39 @@ export function App() {
               element={
                 <ProtectedRoute role="partner">
                   <Profile />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/admin" element={<Navigate to="/admin/orders" replace />} />
+            <Route
+              path="/admin/orders"
+              element={
+                <ProtectedRoute role="admin">
+                  <AdminOrders />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/orders/:id"
+              element={
+                <ProtectedRoute role="admin">
+                  <AdminOrderDetail />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/wines"
+              element={
+                <ProtectedRoute role="admin">
+                  <AdminWines />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/partners"
+              element={
+                <ProtectedRoute role="admin">
+                  <AdminPartners />
                 </ProtectedRoute>
               }
             />
