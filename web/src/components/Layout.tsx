@@ -42,6 +42,12 @@ export function Layout() {
             <NavLink to="/admin/orders" className={navLinkCls}>Замовлення</NavLink>
             <NavLink to="/admin/wines" className={navLinkCls}>Вина</NavLink>
             <NavLink to="/admin/partners" className={navLinkCls}>Партнери</NavLink>
+            <NavLink to="/admin/warehouses" className={navLinkCls}>Склади</NavLink>
+          </nav>
+        )}
+        {role === 'warehouse' && (
+          <nav className="max-w-3xl mx-auto px-4 pb-2 flex gap-2 overflow-x-auto no-print">
+            <NavLink to="/warehouse/orders" className={navLinkCls}>Замовлення</NavLink>
           </nav>
         )}
       </header>

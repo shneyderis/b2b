@@ -13,11 +13,15 @@ import { AdminOrders } from './pages/admin/Orders';
 import { AdminOrderDetail } from './pages/admin/OrderDetail';
 import { AdminWines } from './pages/admin/Wines';
 import { AdminPartners } from './pages/admin/Partners';
+import { AdminWarehouses } from './pages/admin/Warehouses';
+import { WarehouseOrders } from './pages/warehouse/Orders';
+import { WarehouseOrderDetail } from './pages/warehouse/OrderDetail';
 
 function RootRedirect() {
   const { token, role } = useAuth();
   if (!token) return <Navigate to="/login" replace />;
   if (role === 'admin') return <Navigate to="/admin/orders" replace />;
+  if (role === 'warehouse') return <Navigate to="/warehouse/orders" replace />;
   return <Navigate to="/orders" replace />;
 }
 
@@ -106,6 +110,30 @@ export function App() {
               element={
                 <ProtectedRoute role="admin">
                   <AdminPartners />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/warehouses"
+              element={
+                <ProtectedRoute role="admin">
+                  <AdminWarehouses />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/warehouse/orders"
+              element={
+                <ProtectedRoute role="warehouse">
+                  <WarehouseOrders />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/warehouse/orders/:id"
+              element={
+                <ProtectedRoute role="warehouse">
+                  <WarehouseOrderDetail />
                 </ProtectedRoute>
               }
             />

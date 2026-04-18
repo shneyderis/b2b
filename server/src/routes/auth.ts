@@ -18,11 +18,13 @@ r.post('/login', async (req, res) => {
   const row = await one<{
     id: string;
     partner_id: string | null;
+    warehouse_id: string | null;
     password_hash: string;
-    role: 'partner' | 'admin';
+    role: 'partner' | 'admin' | 'warehouse';
     partner_status: 'pending' | 'approved' | 'rejected' | null;
   }>(
-    `SELECT u.id, u.partner_id, u.password_hash, u.role, p.status AS partner_status
+    `SELECT u.id, u.partner_id, u.warehouse_id, u.password_hash, u.role,
+            p.status AS partner_status
        FROM users u LEFT JOIN partners p ON p.id = u.partner_id
       WHERE lower(u.email) = lower($1)`,
     [email]
@@ -35,8 +37,16 @@ r.post('/login', async (req, res) => {
   if (row.role === 'partner' && row.partner_status !== 'approved') {
     return res.status(403).json({ error: 'partner_not_approved', status: row.partner_status });
   }
+  if (row.role === 'warehouse' && !row.warehouse_id) {
+    return res.status(403).json({ error: 'no_warehouse' });
+  }
 
-  const token = signToken({ uid: row.id, pid: row.partner_id, role: row.role });
+  const token = signToken({
+    uid: row.id,
+    pid: row.partner_id,
+    wid: row.warehouse_id,
+    role: row.role,
+  });
   res.json({ token, role: row.role });
 });
 

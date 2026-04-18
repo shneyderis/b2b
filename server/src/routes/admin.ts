@@ -215,6 +215,52 @@ r.put('/wines/:id', async (req, res) => {
   res.json(row);
 });
 
+/* ---------------- warehouses ---------------- */
+
+r.get('/warehouses', async (_req, res) => {
+  res.json(await query(
+    `SELECT id, name, created_at FROM warehouses ORDER BY created_at`
+  ));
+});
+
+const warehouseSchema = z.object({ name: z.string().min(1).max(255) });
+
+r.post('/warehouses', async (req, res) => {
+  const p = warehouseSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  const row = await one(
+    `INSERT INTO warehouses (name) VALUES ($1) RETURNING *`,
+    [p.data.name]
+  );
+  res.status(201).json(row);
+});
+
+/* ---------------- warehouse staff users ---------------- */
+
+const warehouseUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  contact_name: z.string().max(255).optional(),
+  warehouse_id: z.string().uuid(),
+});
+
+r.post('/warehouse-users', async (req, res) => {
+  const p = warehouseUserSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  const exists = await one(`SELECT 1 FROM users WHERE lower(email) = lower($1)`, [p.data.email]);
+  if (exists) return res.status(409).json({ error: 'email_taken' });
+  const wh = await one(`SELECT id FROM warehouses WHERE id = $1`, [p.data.warehouse_id]);
+  if (!wh) return res.status(400).json({ error: 'warehouse_not_found' });
+  const hash = await hashPassword(p.data.password);
+  const row = await one(
+    `INSERT INTO users (email, password_hash, contact_name, role, warehouse_id)
+     VALUES ($1, $2, $3, 'warehouse', $4)
+     RETURNING id, email, contact_name, warehouse_id, created_at`,
+    [p.data.email, hash, p.data.contact_name ?? null, p.data.warehouse_id]
+  );
+  res.status(201).json(row);
+});
+
 /* ---------------- partners ---------------- */
 
 r.get('/partners', async (req, res) => {
@@ -222,9 +268,11 @@ r.get('/partners', async (req, res) => {
   const params: any[] = [];
   let sql = `
     SELECT p.id, p.name, p.discount_percent, p.status, p.notes, p.created_at,
+           p.warehouse_id, w.name AS warehouse_name,
            COALESCE(u.users, '[]'::jsonb) AS users,
            COALESCE(a.addresses, '[]'::jsonb) AS addresses
       FROM partners p
+      LEFT JOIN warehouses w ON w.id = p.warehouse_id
       LEFT JOIN (
         SELECT partner_id, jsonb_agg(jsonb_build_object(
           'id', id, 'email', email, 'phone', phone,
@@ -250,6 +298,7 @@ const createPartnerSchema = z.object({
   name: z.string().min(1).max(255),
   discount_percent: z.number().min(0).max(100).optional(),
   notes: z.string().max(2000).optional(),
+  warehouse_id: z.string().uuid().optional(),
   user: z.object({
     email: z.string().email(),
     password: z.string().min(6),
@@ -265,13 +314,18 @@ r.post('/partners', async (req, res) => {
   const exists = await one(`SELECT 1 FROM users WHERE lower(email) = lower($1)`, [p.data.user.email]);
   if (exists) return res.status(409).json({ error: 'email_taken' });
 
+  const defaultWh = p.data.warehouse_id
+    ? null
+    : await one<{ id: string }>(`SELECT id FROM warehouses ORDER BY created_at LIMIT 1`);
+  const warehouseId = p.data.warehouse_id ?? defaultWh?.id ?? null;
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { rows: [partner] } = await client.query(
-      `INSERT INTO partners (name, discount_percent, notes, status)
-       VALUES ($1, COALESCE($2, 0), $3, 'approved') RETURNING *`,
-      [p.data.name, p.data.discount_percent ?? null, p.data.notes ?? null]
+      `INSERT INTO partners (name, discount_percent, notes, status, warehouse_id)
+       VALUES ($1, COALESCE($2, 0), $3, 'approved', $4) RETURNING *`,
+      [p.data.name, p.data.discount_percent ?? null, p.data.notes ?? null, warehouseId]
     );
     const hash = await hashPassword(p.data.user.password);
     await client.query(
@@ -293,6 +347,7 @@ const updatePartnerSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   discount_percent: z.number().min(0).max(100).optional(),
   notes: z.string().max(2000).nullable().optional(),
+  warehouse_id: z.string().uuid().nullable().optional(),
 });
 
 r.put('/partners/:id', async (req, res) => {
@@ -302,9 +357,16 @@ r.put('/partners/:id', async (req, res) => {
     `UPDATE partners SET
        name = COALESCE($2, name),
        discount_percent = COALESCE($3, discount_percent),
-       notes = COALESCE($4, notes)
+       notes = COALESCE($4, notes),
+       warehouse_id = COALESCE($5, warehouse_id)
      WHERE id = $1 RETURNING *`,
-    [req.params.id, p.data.name ?? null, p.data.discount_percent ?? null, p.data.notes ?? null]
+    [
+      req.params.id,
+      p.data.name ?? null,
+      p.data.discount_percent ?? null,
+      p.data.notes ?? null,
+      p.data.warehouse_id ?? null,
+    ]
   );
   if (!row) return res.status(404).json({ error: 'not found' });
   res.json(row);

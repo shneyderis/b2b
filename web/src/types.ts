@@ -1,4 +1,10 @@
-export type Role = 'partner' | 'admin';
+export type Role = 'partner' | 'admin' | 'warehouse';
+
+export interface Warehouse {
+  id: string;
+  name: string;
+  created_at?: string;
+}
 
 export type PartnerStatus = 'pending' | 'approved' | 'rejected';
 
@@ -117,6 +123,27 @@ export interface AdminPartner {
   status: PartnerStatus;
   notes: string | null;
   created_at: string;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
   users: AdminPartnerUser[];
   addresses: Address[];
+}
+
+export interface WarehouseOrderListItem {
+  id: string;
+  order_number: number | string;
+  status: OrderStatus;
+  total_amount: string | number;
+  created_at: string;
+  updated_at: string;
+  partner_name: string;
+  address_label: string;
+  address_text: string;
+}
+
+export interface WarehouseOrderDetail extends WarehouseOrderListItem {
+  comment: string | null;
+  user_contact: string | null;
+  user_phone: string | null;
+  items: OrderItem[];
 }
