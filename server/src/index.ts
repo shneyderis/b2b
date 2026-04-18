@@ -6,6 +6,7 @@ import addressRoutes from './routes/addresses.js';
 import wineRoutes from './routes/wines.js';
 import orderRoutes from './routes/orders.js';
 import adminRoutes from './routes/admin.js';
+import warehouseRoutes from './routes/warehouse.js';
 
 export function createApp() {
   const app = express();
@@ -19,6 +20,7 @@ export function createApp() {
   app.use('/api/wines', wineRoutes);
   app.use('/api/orders', orderRoutes);
   app.use('/api/admin', adminRoutes);
+  app.use('/api/warehouse', warehouseRoutes);
 
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err);

@@ -3,7 +3,12 @@ import jwt from 'jsonwebtoken';
 import type { Request, Response, NextFunction } from 'express';
 import { env } from './env.js';
 
-export type JwtPayload = { uid: string; pid: string | null; role: 'partner' | 'admin' };
+export type JwtPayload = {
+  uid: string;
+  pid: string | null;
+  wid?: string | null;
+  role: 'partner' | 'admin' | 'warehouse';
+};
 
 export function hashPassword(plain: string) {
   return bcrypt.hash(plain, 10);
@@ -50,5 +55,11 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
 
 export function requirePartner(req: Request, res: Response, next: NextFunction) {
   if (req.user?.role !== 'partner') return res.status(403).json({ error: 'forbidden' });
+  next();
+}
+
+export function requireWarehouse(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role !== 'warehouse') return res.status(403).json({ error: 'forbidden' });
+  if (!req.user.wid) return res.status(403).json({ error: 'no_warehouse' });
   next();
 }

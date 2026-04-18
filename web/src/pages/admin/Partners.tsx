@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../../api';
-import type { AdminPartner, PartnerStatus } from '../../types';
+import type { AdminPartner, PartnerStatus, Warehouse } from '../../types';
 
 const STATUS_LABELS: Record<PartnerStatus, string> = {
   pending: 'На апруві',
@@ -17,6 +17,7 @@ export function AdminPartners() {
   const [error, setError] = useState<string | null>(null);
   const [counts, setCounts] = useState<Record<PartnerStatus, number>>({ pending: 0, approved: 0, rejected: 0 });
   const [showCreate, setShowCreate] = useState(false);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
 
   async function load(status: PartnerStatus) {
     setLoading(true);
@@ -46,6 +47,7 @@ export function AdminPartners() {
 
   useEffect(() => {
     void refreshCounts();
+    api<Warehouse[]>('/admin/warehouses').then(setWarehouses).catch(() => {});
   }, []);
 
   async function changeStatus(id: string, status: PartnerStatus) {
@@ -67,6 +69,16 @@ export function AdminPartners() {
       setPartners((prev) => prev.map((p) => (p.id === id ? { ...p, discount_percent: row.discount_percent } : p)));
     } catch {
       alert('Не вдалося оновити знижку.');
+    }
+  }
+
+  async function updateWarehouse(id: string, warehouse_id: string) {
+    try {
+      await api(`/admin/partners/${id}`, { method: 'PUT', body: { warehouse_id } });
+      const wh = warehouses.find((w) => w.id === warehouse_id);
+      setPartners((prev) => prev.map((p) => (p.id === id ? { ...p, warehouse_id, warehouse_name: wh?.name ?? null } : p)));
+    } catch {
+      alert('Не вдалося оновити склад.');
     }
   }
 
@@ -105,10 +117,12 @@ export function AdminPartners() {
             <PartnerCard
               key={p.id}
               partner={p}
+              warehouses={warehouses}
               onApprove={() => changeStatus(p.id, 'approved')}
               onReject={() => changeStatus(p.id, 'rejected')}
               onRestore={() => changeStatus(p.id, 'pending')}
               onDiscount={(n) => updateDiscount(p.id, n)}
+              onWarehouse={(wid) => updateWarehouse(p.id, wid)}
             />
           ))}
         </ul>
@@ -116,6 +130,7 @@ export function AdminPartners() {
 
       {showCreate && (
         <CreatePartnerModal
+          warehouses={warehouses}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
@@ -131,16 +146,20 @@ export function AdminPartners() {
 
 function PartnerCard({
   partner,
+  warehouses,
   onApprove,
   onReject,
   onRestore,
   onDiscount,
+  onWarehouse,
 }: {
   partner: AdminPartner;
+  warehouses: Warehouse[];
   onApprove: () => void;
   onReject: () => void;
   onRestore: () => void;
   onDiscount: (n: number) => void;
+  onWarehouse: (warehouseId: string) => void;
 }) {
   const [discount, setDiscount] = useState<string>(String(partner.discount_percent));
   const [open, setOpen] = useState(partner.status === 'pending');
@@ -168,7 +187,7 @@ function PartnerCard({
             {partner.users.length} користувач(ів) · {partner.addresses.length} адрес
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
           {partner.status === 'approved' && (
             <label className="flex items-center gap-2 text-sm">
               <span className="text-neutral-600">Знижка</span>
@@ -184,6 +203,21 @@ function PartnerCard({
                 className="h-10 w-16 px-2 text-right rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
               />
               <span className="text-neutral-600">%</span>
+            </label>
+          )}
+          {warehouses.length > 0 && (
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-neutral-600">Склад</span>
+              <select
+                value={partner.warehouse_id ?? ''}
+                onChange={(e) => onWarehouse(e.target.value)}
+                className="h-10 px-2 rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
+              >
+                {!partner.warehouse_id && <option value="" disabled>—</option>}
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
             </label>
           )}
         </div>
@@ -258,9 +292,14 @@ function PartnerCard({
   );
 }
 
-function CreatePartnerModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function CreatePartnerModal({ warehouses, onClose, onCreated }: {
+  warehouses: Warehouse[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
   const [name, setName] = useState('');
   const [discount, setDiscount] = useState('0');
+  const [warehouseId, setWarehouseId] = useState<string>(warehouses[0]?.id ?? '');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
@@ -283,6 +322,7 @@ function CreatePartnerModal({ onClose, onCreated }: { onClose: () => void; onCre
         body: {
           name: name.trim(),
           discount_percent: d,
+          warehouse_id: warehouseId || undefined,
           user: {
             email: email.trim(),
             password,
@@ -315,6 +355,14 @@ function CreatePartnerModal({ onClose, onCreated }: { onClose: () => void; onCre
           <span className="text-sm text-neutral-600">Знижка, %</span>
           <input className="input text-right" inputMode="decimal" value={discount} onChange={(e) => setDiscount(e.target.value)} />
         </label>
+        {warehouses.length > 0 && (
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-neutral-600">Склад</span>
+            <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+          </label>
+        )}
         <div className="text-sm font-medium text-neutral-700 mt-1">Контактна особа</div>
         <label className="flex flex-col gap-1">
           <span className="text-sm text-neutral-600">Ім’я</span>
