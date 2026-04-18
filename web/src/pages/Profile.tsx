@@ -1,6 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api';
+import { cacheGet, cacheInvalidate, cacheSet } from '../cache';
 import type { Address, Profile as ProfileData } from '../types';
+
+const ADDRS_TTL = 2 * 60 * 1000;
 
 function formatDiscount(v: string | number | undefined) {
   if (v === undefined || v === null || v === '') return '0';
@@ -114,20 +117,21 @@ function ProfileForm({ data, onSaved }: { data: ProfileData; onSaved: (p: Profil
 }
 
 function AddressesSection() {
-  const [items, setItems] = useState<Address[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = cacheGet<Address[]>('addresses');
+  const [items, setItems] = useState<Address[]>(cached ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Address | null>(null);
   const [creating, setCreating] = useState(false);
 
   async function refresh() {
-    setLoading(true);
     try {
       const list = await api<Address[]>('/addresses');
       setItems(list);
+      cacheSet('addresses', list, ADDRS_TTL);
       setError(null);
     } catch {
-      setError('Не вдалося завантажити адреси.');
+      if (!cached) setError('Не вдалося завантажити адреси.');
     } finally {
       setLoading(false);
     }
@@ -141,6 +145,7 @@ function AddressesSection() {
     if (!confirm('Видалити цю адресу?')) return;
     try {
       await api(`/addresses/${id}`, { method: 'DELETE' });
+      cacheInvalidate('addresses');
       await refresh();
     } catch {
       alert('Не вдалося видалити адресу.');
@@ -163,6 +168,7 @@ function AddressesSection() {
           onCancel={() => setCreating(false)}
           onSaved={async () => {
             setCreating(false);
+            cacheInvalidate('addresses');
             await refresh();
           }}
         />
@@ -173,6 +179,7 @@ function AddressesSection() {
           onCancel={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null);
+            cacheInvalidate('addresses');
             await refresh();
           }}
         />
