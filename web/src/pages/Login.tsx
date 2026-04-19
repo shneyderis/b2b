@@ -4,12 +4,21 @@ import { useAuth } from '../auth';
 import { ApiError } from '../api';
 
 export function Login() {
-  const { login } = useAuth();
+  const { login, tgAuthStatus } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const tgMessage =
+    tgAuthStatus === 'pending'
+      ? 'Вхід через Telegram…'
+      : tgAuthStatus === 'not_approved'
+        ? 'Заявка через Telegram створена. Очікуйте на підтвердження менеджера.'
+        : tgAuthStatus === 'error'
+          ? 'Не вдалося увійти через Telegram. Скористайтеся email та паролем.'
+          : null;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -39,6 +48,11 @@ export function Login() {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm card">
         <h1 className="text-2xl font-bold text-burgundy-700 mb-4">Вхід</h1>
+        {tgMessage && (
+          <div className="mb-3 text-sm text-burgundy-700 bg-burgundy-50 border border-burgundy-100 rounded-lg p-2">
+            {tgMessage}
+          </div>
+        )}
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-sm text-neutral-600">Email</span>
