@@ -3,6 +3,7 @@ export type Role = 'partner' | 'admin' | 'warehouse';
 export interface Warehouse {
   id: string;
   name: string;
+  telegram_chat_id: string | null;
   created_at?: string;
 }
 

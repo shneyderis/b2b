@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { one, pool, query } from '../db.js';
 import { requireAdmin, requireAuth, hashPassword } from '../auth.js';
 import { streamOrderPdf } from '../pdf.js';
-import { notifyPartnerStatusChange } from '../telegram.js';
+import { notifyPartnerStatusChange, notifyWarehouseOrderConfirmed } from '../telegram.js';
 
 const r = Router();
 r.use(requireAuth, requireAdmin);
@@ -152,6 +152,7 @@ r.put('/orders/:id/status', async (req, res) => {
     p.data.status,
   ]);
   void notifyPartnerStatusChange(req.params.id, p.data.status);
+  if (p.data.status === 'confirmed') void notifyWarehouseOrderConfirmed(req.params.id);
   res.json({ ok: true });
 });
 
@@ -219,20 +220,47 @@ r.put('/wines/:id', async (req, res) => {
 
 r.get('/warehouses', async (_req, res) => {
   res.json(await query(
-    `SELECT id, name, created_at FROM warehouses ORDER BY created_at`
+    `SELECT id, name, telegram_chat_id, created_at FROM warehouses ORDER BY created_at`
   ));
 });
 
-const warehouseSchema = z.object({ name: z.string().min(1).max(255) });
+const warehouseCreateSchema = z.object({
+  name: z.string().min(1).max(255),
+  telegram_chat_id: z.string().max(64).nullable().optional(),
+});
 
 r.post('/warehouses', async (req, res) => {
-  const p = warehouseSchema.safeParse(req.body);
+  const p = warehouseCreateSchema.safeParse(req.body);
   if (!p.success) return res.status(400).json({ error: 'invalid input' });
   const row = await one(
-    `INSERT INTO warehouses (name) VALUES ($1) RETURNING *`,
-    [p.data.name]
+    `INSERT INTO warehouses (name, telegram_chat_id) VALUES ($1, $2) RETURNING *`,
+    [p.data.name, p.data.telegram_chat_id || null]
   );
   res.status(201).json(row);
+});
+
+const warehouseUpdateSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  telegram_chat_id: z.string().max(64).nullable().optional(),
+});
+
+r.put('/warehouses/:id', async (req, res) => {
+  const p = warehouseUpdateSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  const row = await one(
+    `UPDATE warehouses SET
+       name = COALESCE($2, name),
+       telegram_chat_id = CASE WHEN $3::boolean THEN $4 ELSE telegram_chat_id END
+     WHERE id = $1 RETURNING *`,
+    [
+      req.params.id,
+      p.data.name ?? null,
+      p.data.telegram_chat_id !== undefined,
+      p.data.telegram_chat_id ?? null,
+    ]
+  );
+  if (!row) return res.status(404).json({ error: 'not found' });
+  res.json(row);
 });
 
 /* ---------------- warehouse staff users ---------------- */
