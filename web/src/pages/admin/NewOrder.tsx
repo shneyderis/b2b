@@ -20,6 +20,11 @@ export function AdminNewOrder() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [parseOpen, setParseOpen] = useState(false);
+  const [parseText, setParseText] = useState('');
+  const [parseBusy, setParseBusy] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
+
   useEffect(() => {
     let active = true;
     Promise.all([api<AdminPartner[]>('/admin/partners'), api<AdminWine[]>('/admin/wines')])
@@ -118,6 +123,44 @@ export function AdminNewOrder() {
     }
   }
 
+  async function onParse() {
+    setParseError(null);
+    const text = parseText.trim();
+    if (!text) {
+      setParseError('Вставте текст замовлення.');
+      return;
+    }
+    setParseBusy(true);
+    try {
+      const res = await api<{ items: { wine_id: string; quantity: number }[] }>(
+        '/admin/orders/parse',
+        { method: 'POST', body: { text } }
+      );
+      const knownIds = new Set(wines.filter((w) => w.is_active && w.stock_quantity > 0).map((w) => w.id));
+      const next: Qty = {};
+      for (const it of res.items) {
+        if (!knownIds.has(it.wine_id)) continue;
+        next[it.wine_id] = (next[it.wine_id] ?? 0) + it.quantity;
+      }
+      if (Object.keys(next).length === 0) {
+        setParseError('Не вдалося розпізнати жодної позиції з каталогу.');
+        setParseBusy(false);
+        return;
+      }
+      setQty(next);
+      setParseOpen(false);
+      setParseText('');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 503) {
+        setParseError('LLM не налаштовано на сервері.');
+      } else {
+        setParseError('Не вдалося розпізнати текст. Спробуйте ще раз.');
+      }
+    } finally {
+      setParseBusy(false);
+    }
+  }
+
   if (loading) return <div className="card">Завантаження…</div>;
   if (loadError) return <div className="card text-burgundy-700">{loadError}</div>;
 
@@ -175,14 +218,26 @@ export function AdminNewOrder() {
         </section>
 
         <section className="card">
-          <h2 className="font-semibold text-burgundy-700 mb-2">
-            Позиції
-            {discount > 0 && (
-              <span className="ml-2 text-xs font-normal text-neutral-500">
-                · ціни зі знижкою {discount}%
-              </span>
-            )}
-          </h2>
+          <div className="flex items-center justify-between mb-2 gap-3">
+            <h2 className="font-semibold text-burgundy-700">
+              Позиції
+              {discount > 0 && (
+                <span className="ml-2 text-xs font-normal text-neutral-500">
+                  · ціни зі знижкою {discount}%
+                </span>
+              )}
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                setParseError(null);
+                setParseOpen(true);
+              }}
+              className="h-9 px-3 rounded-lg text-sm text-burgundy-700 border border-burgundy-700 hover:bg-burgundy-50"
+            >
+              Розпізнати з тексту
+            </button>
+          </div>
           <ul className="divide-y divide-neutral-200">
             {availableWines.map((w) => {
               const value = qty[w.id] ?? 0;
@@ -248,6 +303,61 @@ export function AdminNewOrder() {
         </div>
         {submitError && <div className="card text-burgundy-700 text-sm">{submitError}</div>}
       </form>
+
+      {parseOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => !parseBusy && setParseOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl w-full max-w-xl p-4 flex flex-col gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-burgundy-700">Розпізнати замовлення з тексту</h3>
+              <button
+                type="button"
+                onClick={() => !parseBusy && setParseOpen(false)}
+                className="text-neutral-500 hover:text-neutral-800"
+                aria-label="Закрити"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-sm text-neutral-600">
+              Вставте довільний текст (SMS, лист, повідомлення). LLM поверне позиції,
+              які будуть підставлені у форму; партнера й адресу треба обрати вручну.
+            </p>
+            <textarea
+              className="min-h-[180px] w-full p-3 rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
+              value={parseText}
+              onChange={(e) => setParseText(e.target.value)}
+              maxLength={10000}
+              disabled={parseBusy}
+              placeholder="Наприклад: «Добрий день, додайте до замовлення 6 пляшок Каберне 2022 і 3 Шардоне»"
+            />
+            {parseError && <div className="text-sm text-burgundy-700">{parseError}</div>}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setParseOpen(false)}
+                disabled={parseBusy}
+                className="h-10 px-3 rounded-lg text-sm text-burgundy-700 hover:bg-burgundy-100"
+              >
+                Скасувати
+              </button>
+              <button
+                type="button"
+                onClick={onParse}
+                disabled={parseBusy}
+                className="btn-primary px-4"
+              >
+                {parseBusy ? 'Обробляємо…' : 'Розпізнати'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
