@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { env } from './env.js';
 import { query } from './db.js';
 
-const MODEL = 'claude-haiku-4-5-20251001';
+const MODEL = 'claude-haiku-4-5';
 const CACHE_TTL_MS = 60 * 1000;
 
 type CatalogEntry = { id: string; name: string };
@@ -20,51 +20,66 @@ async function getCatalog(): Promise<CatalogEntry[]> {
 
 export type ParsedOrder = { items: { wine_id: string; quantity: number }[] };
 
+function fail(status: number, code: string, detail?: string): never {
+  const err: any = new Error(code);
+  err.status = status;
+  if (detail) err.detail = detail;
+  throw err;
+}
+
 export async function parseOrderText(text: string): Promise<ParsedOrder> {
-  if (!env.ANTHROPIC_API_KEY) {
-    const err: any = new Error('llm_not_configured');
-    err.status = 503;
-    throw err;
-  }
+  if (!env.ANTHROPIC_API_KEY) fail(503, 'llm_not_configured');
+
   const catalog = await getCatalog();
+  if (catalog.length === 0) fail(503, 'catalog_empty');
+
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
   const system =
     `Ти розпізнаєш замовлення вина з довільного українського/російського тексту. ` +
-    `У мене такий каталог (id та повна назва вина):\n` +
+    `Каталог (id та повна назва):\n` +
     JSON.stringify(catalog) +
-    `\n\nЗ тексту користувача витягни позиції та поверни ЛИШЕ валідний JSON вигляду ` +
+    `\n\nВитягни позиції з тексту користувача та поверни ЛИШЕ валідний JSON вигляду ` +
     `{"items":[{"wine_id":"<uuid з каталогу>","quantity":<ціле додатне число>}]}. ` +
-    `Використовуй тільки id з каталогу. Якщо кількість не вказана — 1. ` +
-    `Якщо позицію не впізнано — пропусти її. Без пояснень, без markdown, лише JSON.`;
+    `Підбирай wine_id з найближчою назвою (ігноруй регістр, рік, дрібні відмінності). ` +
+    `Якщо кількість не вказана — 1. Якщо позицію не впізнано — пропусти її. ` +
+    `Без markdown, без пояснень, лише JSON.`;
 
-  const resp = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    system,
-    messages: [{ role: 'user', content: text }],
-  });
+  let resp;
+  try {
+    resp = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      system,
+      messages: [{ role: 'user', content: text }],
+    });
+  } catch (e: any) {
+    console.error('[orderParser] anthropic error', {
+      status: e?.status,
+      message: e?.message,
+      type: e?.error?.type,
+      body: e?.error,
+    });
+    const status = typeof e?.status === 'number' ? e.status : 502;
+    const detail = e?.error?.error?.message || e?.message || 'anthropic_error';
+    fail(status, 'llm_request_failed', detail);
+  }
 
   const part = resp.content.find((p) => p.type === 'text');
-  if (!part || part.type !== 'text') {
-    const err: any = new Error('llm_empty_response');
-    err.status = 502;
-    throw err;
-  }
+  if (!part || part.type !== 'text') fail(502, 'llm_empty_response');
   const raw = part.text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
   let parsed: any;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    const err: any = new Error('llm_invalid_json');
-    err.status = 502;
-    throw err;
+    console.error('[orderParser] invalid JSON from model', raw.slice(0, 500));
+    fail(502, 'llm_invalid_json', raw.slice(0, 200));
   }
   const validIds = new Set(catalog.map((w) => w.id));
   const items: { wine_id: string; quantity: number }[] = [];
-  for (const raw of Array.isArray(parsed?.items) ? parsed.items : []) {
-    const id = typeof raw?.wine_id === 'string' ? raw.wine_id : null;
-    const qty = Number(raw?.quantity);
+  for (const it of Array.isArray(parsed?.items) ? parsed.items : []) {
+    const id = typeof it?.wine_id === 'string' ? it.wine_id : null;
+    const qty = Number(it?.quantity);
     if (!id || !validIds.has(id)) continue;
     if (!Number.isFinite(qty) || qty <= 0) continue;
     items.push({ wine_id: id, quantity: Math.floor(qty) });
