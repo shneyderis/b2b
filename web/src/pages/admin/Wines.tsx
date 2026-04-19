@@ -197,10 +197,12 @@ function WineRow({
               }`}
             />
           </button>
-        ) : wine.is_active ? (
-          <span className="text-xs rounded-full px-2 py-0.5 bg-green-50 text-green-700 border border-green-200">так</span>
+        ) : !wine.is_active ? (
+          <span className="text-xs rounded-full px-2 py-0.5 bg-neutral-100 text-neutral-600 border border-neutral-200">приховано</span>
+        ) : wine.stock_quantity <= 0 ? (
+          <span className="text-xs rounded-full px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200">немає</span>
         ) : (
-          <span className="text-xs rounded-full px-2 py-0.5 bg-neutral-100 text-neutral-600 border border-neutral-200">ні</span>
+          <span className="text-xs rounded-full px-2 py-0.5 bg-green-50 text-green-700 border border-green-200">в продажу</span>
         )}
       </td>
     </tr>
