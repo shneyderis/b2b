@@ -10,6 +10,7 @@ import { OrderDetail } from './pages/OrderDetail';
 import { NewOrder } from './pages/NewOrder';
 import { EditOrder } from './pages/EditOrder';
 import { AdminOrders } from './pages/admin/Orders';
+import { AdminNewOrder } from './pages/admin/NewOrder';
 import { AdminOrderDetail } from './pages/admin/OrderDetail';
 import { AdminWines } from './pages/admin/Wines';
 import { AdminPartners } from './pages/admin/Partners';
@@ -86,6 +87,14 @@ export function App() {
               element={
                 <ProtectedRoute role="admin">
                   <AdminOrders />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/orders/new"
+              element={
+                <ProtectedRoute role="admin">
+                  <AdminNewOrder />
                 </ProtectedRoute>
               }
             />
