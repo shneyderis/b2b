@@ -19,7 +19,7 @@ r.get('/', async (req, res) => {
     discount = p ? Number(p.discount_percent) : 0;
   }
   const rows = await query(
-    `SELECT id, name,
+    `SELECT id, name, year,
             ROUND(price * (100 - $1::numeric) / 100, 2) AS price,
             stock_quantity, sort_order
        FROM wines

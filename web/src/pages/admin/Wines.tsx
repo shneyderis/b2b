@@ -144,7 +144,10 @@ function WineRow({
 
   return (
     <tr className={`border-t border-neutral-200 ${!wine.is_active ? 'opacity-60' : ''}`}>
-      <td className="px-3 py-2">{wine.name}</td>
+      <td className="px-3 py-2">
+        {wine.name}
+        {wine.year != null && <span className="text-neutral-500 font-normal"> {wine.year}</span>}
+      </td>
       <td className="px-3 py-2 text-right">
         {editing ? (
           <input

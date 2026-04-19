@@ -171,7 +171,10 @@ export function OrderForm({ orderId, initial, submitLabel }: Props) {
                 className={`py-3 flex items-center justify-between gap-3 ${outOfStock ? 'opacity-50' : ''}`}
               >
                 <div className="min-w-0">
-                  <div className="truncate">{w.name}</div>
+                  <div className="truncate">
+                    {w.name}
+                    {w.year != null && <span className="text-neutral-500 font-normal"> {w.year}</span>}
+                  </div>
                   <div className="text-xs text-neutral-500">
                     {formatMoney(w.price)} ₴ {outOfStock && '· немає в наявності'}
                   </div>

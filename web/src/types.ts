@@ -43,6 +43,7 @@ export interface Address {
 export interface Wine {
   id: string;
   name: string;
+  year: number | null;
   price: string | number;
   stock_quantity: number;
   sort_order: number;
@@ -102,6 +103,7 @@ export interface AdminOrderDetail extends OrderDetail {
 export interface AdminWine {
   id: string;
   name: string;
+  year: number | null;
   price: string | number;
   stock_quantity: number;
   sort_order: number;
