@@ -9,6 +9,8 @@ import {
   notifyWarehouseOrderConfirmed,
 } from '../telegram.js';
 import { parseOrderText } from '../orderParser.js';
+import Anthropic from '@anthropic-ai/sdk';
+import { env } from '../env.js';
 
 const r = Router();
 r.use(requireAuth, requireAdmin);
@@ -138,6 +140,41 @@ r.put('/orders/:id', async (req, res) => {
     throw e;
   } finally {
     client.release();
+  }
+});
+
+r.get('/llm-check', async (_req, res) => {
+  const key = env.ANTHROPIC_API_KEY;
+  const keyInfo = key
+    ? { set: true, length: key.length, suffix: key.slice(-4), prefix: key.slice(0, 15) }
+    : { set: false };
+  if (!key) return res.json({ key: keyInfo, ping: null });
+  try {
+    const client = new Anthropic({ apiKey: key });
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 20,
+      messages: [{ role: 'user', content: 'ping' }],
+    });
+    const text = resp.content.find((p) => p.type === 'text');
+    res.json({
+      key: keyInfo,
+      ping: {
+        ok: true,
+        model: resp.model,
+        text: text && text.type === 'text' ? text.text : null,
+      },
+    });
+  } catch (e: any) {
+    res.json({
+      key: keyInfo,
+      ping: {
+        ok: false,
+        status: e?.status ?? null,
+        type: e?.error?.type ?? null,
+        message: e?.error?.error?.message ?? e?.message ?? null,
+      },
+    });
   }
 });
 
