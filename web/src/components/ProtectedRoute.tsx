@@ -10,10 +10,19 @@ export function ProtectedRoute({
   children: ReactNode;
   role?: Role;
 }) {
-  const { token, role: currentRole } = useAuth();
+  const { token, role: currentRole, isTelegram, tgAuthStatus } = useAuth();
   const location = useLocation();
 
-  if (!token) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (!token) {
+    if (isTelegram && tgAuthStatus === 'pending') {
+      return (
+        <div className="min-h-screen flex items-center justify-center px-4 text-sm text-neutral-600">
+          Вхід через Telegram…
+        </div>
+      );
+    }
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
   if (role && currentRole !== role) return <Navigate to="/" replace />;
   return <>{children}</>;
 }

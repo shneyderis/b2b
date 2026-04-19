@@ -1,15 +1,19 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { ApiError } from '../api';
 
 export function Login() {
-  const { login, isTelegram, tgAuthStatus } = useAuth();
+  const { login, isTelegram, tgAuthStatus, token } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (token) navigate('/', { replace: true });
+  }, [token, navigate]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -86,12 +90,16 @@ export function Login() {
 }
 
 function TelegramFlow() {
-  const { tgAuthStatus, onboardTelegram } = useAuth();
+  const { tgAuthStatus, onboardTelegram, token } = useAuth();
   const navigate = useNavigate();
   const [companyName, setCompanyName] = useState('');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (token) navigate('/', { replace: true });
+  }, [token, navigate]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -120,7 +128,7 @@ function TelegramFlow() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm card">
-        {tgAuthStatus === 'pending' && (
+        {(tgAuthStatus === 'pending' || tgAuthStatus === 'idle') && (
           <>
             <h1 className="text-2xl font-bold text-burgundy-700 mb-2">Вхід…</h1>
             <p className="text-sm text-neutral-600">Перевіряємо ваш обліковий запис.</p>
