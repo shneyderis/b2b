@@ -8,6 +8,7 @@ import {
   notifyPartnerStatusChange,
   notifyWarehouseOrderConfirmed,
 } from '../telegram.js';
+import { parseOrderText } from '../orderParser.js';
 
 const r = Router();
 r.use(requireAuth, requireAdmin);
@@ -137,6 +138,20 @@ r.put('/orders/:id', async (req, res) => {
     throw e;
   } finally {
     client.release();
+  }
+});
+
+const parseOrderSchema = z.object({ text: z.string().min(1).max(10000) });
+
+r.post('/orders/parse', async (req, res) => {
+  const p = parseOrderSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  try {
+    const result = await parseOrderText(p.data.text);
+    res.json(result);
+  } catch (e: any) {
+    const status = typeof e?.status === 'number' ? e.status : 500;
+    res.status(status).json({ error: e?.message ?? 'parse_failed' });
   }
 });
 
