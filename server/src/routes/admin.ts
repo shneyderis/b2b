@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { one, pool, query } from '../db.js';
 import { requireAdmin, requireAuth, hashPassword } from '../auth.js';
 import { streamOrderPdf } from '../pdf.js';
-import { notifyPartnerStatusChange, notifyWarehouseOrderConfirmed } from '../telegram.js';
+import {
+  notifyManagersNewOrder,
+  notifyPartnerStatusChange,
+  notifyWarehouseOrderConfirmed,
+} from '../telegram.js';
 
 const r = Router();
 r.use(requireAuth, requireAdmin);
@@ -128,6 +132,74 @@ r.put('/orders/:id', async (req, res) => {
     }
     await client.query('COMMIT');
     res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+});
+
+const createOrderSchema = z.object({
+  partner_id: z.string().uuid(),
+  delivery_address_id: z.string().uuid(),
+  comment: z.string().max(2000).nullable().optional(),
+  items: z.array(itemSchema).min(1),
+});
+
+r.post('/orders', async (req, res) => {
+  const p = createOrderSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+
+  const partner = await one<{ id: string; discount_percent: string }>(
+    `SELECT id, discount_percent FROM partners WHERE id = $1`,
+    [p.data.partner_id]
+  );
+  if (!partner) return res.status(400).json({ error: 'partner_not_found' });
+
+  const addr = await one(
+    `SELECT id FROM delivery_addresses WHERE id = $1 AND partner_id = $2`,
+    [p.data.delivery_address_id, partner.id]
+  );
+  if (!addr) return res.status(400).json({ error: 'invalid_address' });
+
+  const discount = Number(partner.discount_percent);
+  const ids = p.data.items.map((i) => i.wine_id);
+  const wines = await query<{ id: string; price: string; stock_quantity: number; is_active: boolean }>(
+    `SELECT id, price, stock_quantity, is_active FROM wines WHERE id = ANY($1::uuid[])`,
+    [ids]
+  );
+  const byId = new Map(wines.map((w) => [w.id, w]));
+  const priced: { wine_id: string; quantity: number; price: number }[] = [];
+  let total = 0;
+  for (const it of p.data.items) {
+    const w = byId.get(it.wine_id);
+    if (!w || !w.is_active) return res.status(400).json({ error: `wine_unavailable:${it.wine_id}` });
+    if (w.stock_quantity <= 0) return res.status(400).json({ error: `wine_out_of_stock:${it.wine_id}` });
+    const price = Math.round(Number(w.price) * (100 - discount)) / 100;
+    priced.push({ wine_id: it.wine_id, quantity: it.quantity, price });
+    total += price * it.quantity;
+  }
+  total = Math.round(total * 100) / 100;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [order] } = await client.query(
+      `INSERT INTO orders (partner_id, user_id, delivery_address_id, comment, total_amount, status)
+       VALUES ($1, $2, $3, $4, $5, 'confirmed') RETURNING id, order_number`,
+      [partner.id, req.user!.uid, p.data.delivery_address_id, p.data.comment ?? null, total]
+    );
+    for (const it of priced) {
+      await client.query(
+        `INSERT INTO order_items (order_id, wine_id, quantity, price) VALUES ($1, $2, $3, $4)`,
+        [order.id, it.wine_id, it.quantity, it.price]
+      );
+    }
+    await client.query('COMMIT');
+    void notifyManagersNewOrder(order.id);
+    void notifyWarehouseOrderConfirmed(order.id);
+    res.status(201).json({ id: order.id, order_number: order.order_number });
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;

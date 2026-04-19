@@ -72,7 +72,15 @@ export function AdminOrders() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-bold text-burgundy-700">Замовлення</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-burgundy-700">Замовлення</h1>
+        <Link
+          to="/admin/orders/new"
+          className="h-10 px-3 flex items-center rounded-lg bg-burgundy-700 text-white text-sm font-medium"
+        >
+          Нове замовлення
+        </Link>
+      </div>
 
       <section className="card grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <label className="flex flex-col gap-1">
