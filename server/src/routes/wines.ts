@@ -5,7 +5,7 @@ import { requireAuth } from '../auth.js';
 const r = Router();
 r.use(requireAuth);
 
-// Catalog for partners: only active wines; in-stock first, then sort_order.
+// Catalog for partners: only active wines that are actually in stock.
 // Prices returned are already discounted by the partner's discount_percent,
 // so the client never has to know about the discount or apply it itself.
 r.get('/', async (req, res) => {
@@ -22,8 +22,9 @@ r.get('/', async (req, res) => {
     `SELECT id, name,
             ROUND(price * (100 - $1::numeric) / 100, 2) AS price,
             stock_quantity, sort_order
-       FROM wines WHERE is_active = TRUE
-      ORDER BY (stock_quantity > 0) DESC, sort_order, name`,
+       FROM wines
+      WHERE is_active = TRUE AND stock_quantity > 0
+      ORDER BY sort_order, name`,
     [discount]
   );
   res.setHeader('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
