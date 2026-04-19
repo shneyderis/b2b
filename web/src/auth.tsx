@@ -2,11 +2,15 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { api, ApiError, clearAuth, getRole, getToken, setAuth } from './api';
 import type { Role } from './types';
 
+export type TgAuthStatus = 'idle' | 'pending' | 'not_linked' | 'not_approved' | 'error';
+
 interface AuthContextValue {
   token: string | null;
   role: Role | null;
-  tgAuthStatus: 'idle' | 'pending' | 'error' | 'not_approved';
+  tgAuthStatus: TgAuthStatus;
+  isTelegram: boolean;
   login: (email: string, password: string) => Promise<void>;
+  onboardTelegram: (companyName: string, phone: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -20,9 +24,9 @@ function getTelegramInitData(): string | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => getToken());
   const [role, setRole] = useState<Role | null>(() => getRole() as Role | null);
-  const [tgAuthStatus, setTgAuthStatus] =
-    useState<AuthContextValue['tgAuthStatus']>('idle');
+  const [tgAuthStatus, setTgAuthStatus] = useState<TgAuthStatus>('idle');
   const tgAttemptedRef = useRef(false);
+  const isTelegram = !!window.Telegram?.WebApp?.initData;
 
   useEffect(() => {
     function onStorage() {
@@ -40,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       webApp.ready();
       webApp.expand?.();
     } catch {
-      // ignore — older SDKs may not have these
+      // older SDK versions don't expose all methods
     }
 
     const initData = getTelegramInitData();
@@ -57,11 +61,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRole(res.role);
         setTgAuthStatus('idle');
       } catch (err) {
-        if (err instanceof ApiError && err.status === 403 && err.data?.error === 'partner_not_approved') {
-          setTgAuthStatus('not_approved');
-        } else {
-          setTgAuthStatus('error');
+        if (err instanceof ApiError) {
+          if (err.status === 404 && err.data?.error === 'not_linked') {
+            setTgAuthStatus('not_linked');
+            return;
+          }
+          if (err.status === 403 && err.data?.error === 'partner_not_approved') {
+            setTgAuthStatus('not_approved');
+            return;
+          }
         }
+        setTgAuthStatus('error');
       }
     })();
   }, [token]);
@@ -70,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     token,
     role,
     tgAuthStatus,
+    isTelegram,
     async login(email, password) {
       const res = await api<{ token: string; role: Role }>('/auth/login', {
         body: { email, password },
@@ -78,12 +89,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(res.token);
       setRole(res.role);
     },
+    async onboardTelegram(companyName, phone) {
+      const initData = getTelegramInitData();
+      if (!initData) throw new ApiError(400, 'not_in_telegram');
+      setTgAuthStatus('pending');
+      try {
+        const res = await api<{ token: string; role: Role }>('/auth/telegram/onboard', {
+          body: { initData, company_name: companyName, phone },
+        });
+        setAuth(res.token, res.role);
+        setToken(res.token);
+        setRole(res.role);
+        setTgAuthStatus('idle');
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 403 && err.data?.error === 'partner_not_approved') {
+          setTgAuthStatus('not_approved');
+        } else {
+          setTgAuthStatus('error');
+        }
+        throw err;
+      }
+    },
     logout() {
       clearAuth();
       setToken(null);
       setRole(null);
     },
-  }), [token, role, tgAuthStatus]);
+  }), [token, role, tgAuthStatus, isTelegram]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
