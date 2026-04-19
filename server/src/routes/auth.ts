@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import crypto from 'node:crypto';
-import { one, pool } from '../db.js';
+import { one, pool, query } from '../db.js';
 import { hashPassword, signToken, verifyPassword } from '../auth.js';
 import { env } from '../env.js';
 
@@ -168,61 +168,150 @@ r.post('/telegram', async (req, res) => {
     return res.status(401).json({ error: 'invalid_init_data', reason: verified.reason });
   }
 
+  const tgId = String(verified.user.id);
+
+  const row = await one<{
+    id: string;
+    partner_id: string | null;
+    warehouse_id: string | null;
+    role: 'partner' | 'admin' | 'warehouse';
+    partner_status: 'pending' | 'approved' | 'rejected' | null;
+  }>(
+    `SELECT u.id, u.partner_id, u.warehouse_id, u.role, p.status AS partner_status
+       FROM users u LEFT JOIN partners p ON p.id = u.partner_id
+      WHERE u.telegram_id = $1::bigint`,
+    [tgId]
+  );
+
+  if (!row) return res.status(404).json({ error: 'not_linked' });
+
+  if (row.role === 'partner' && row.partner_status !== 'approved') {
+    return res.status(403).json({ error: 'partner_not_approved', status: row.partner_status });
+  }
+  if (row.role === 'warehouse' && !row.warehouse_id) {
+    return res.status(403).json({ error: 'no_warehouse' });
+  }
+
+  const token = signToken({
+    uid: row.id,
+    pid: row.partner_id,
+    wid: row.warehouse_id,
+    role: row.role,
+  });
+  res.json({ token, role: row.role });
+});
+
+const telegramOnboardSchema = z.object({
+  initData: z.string().min(1).max(10_000),
+  company_name: z.string().min(1).max(255),
+  phone: z.string().min(3).max(50),
+});
+
+function normalizePhone(raw: string): string {
+  return raw.replace(/\D/g, '');
+}
+
+r.post('/telegram/onboard', async (req, res) => {
+  const parsed = telegramOnboardSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid input' });
+
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    return res.status(500).json({ error: 'telegram_not_configured' });
+  }
+
+  const verified = verifyTelegramInitData(parsed.data.initData, env.TELEGRAM_BOT_TOKEN);
+  if (!verified.ok) {
+    return res.status(401).json({ error: 'invalid_init_data', reason: verified.reason });
+  }
+
+  const { company_name, phone } = parsed.data;
+  const phoneDigits = normalizePhone(phone);
+  if (phoneDigits.length < 9) return res.status(400).json({ error: 'invalid_phone' });
+  const phoneTail = phoneDigits.slice(-9);
+
   const tg = verified.user;
   const tgId = String(tg.id);
-  const displayName =
+  const contactName =
     [tg.first_name, tg.last_name].filter(Boolean).join(' ').trim() ||
     tg.username ||
     `tg${tgId}`;
 
-  let row = await one<{
+  type Row = {
     id: string;
     partner_id: string | null;
-    role: 'partner' | 'admin';
+    warehouse_id: string | null;
+    role: 'partner' | 'admin' | 'warehouse';
     partner_status: 'pending' | 'approved' | 'rejected' | null;
-  }>(
-    `SELECT u.id, u.partner_id, u.role, p.status AS partner_status
+  };
+
+  let row = await one<Row>(
+    `SELECT u.id, u.partner_id, u.warehouse_id, u.role, p.status AS partner_status
        FROM users u LEFT JOIN partners p ON p.id = u.partner_id
       WHERE u.telegram_id = $1::bigint`,
     [tgId]
   );
 
   if (!row) {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const { rows: [partner] } = await client.query(
-        `INSERT INTO partners (name, status) VALUES ($1, 'pending') RETURNING id`,
-        [displayName]
+    const matches = await query<Row>(
+      `SELECT u.id, u.partner_id, u.warehouse_id, u.role, p.status AS partner_status
+         FROM users u LEFT JOIN partners p ON p.id = u.partner_id
+        WHERE u.role = 'partner'
+          AND u.telegram_id IS NULL
+          AND right(regexp_replace(coalesce(u.phone, ''), '[^0-9]', '', 'g'), 9) = $1`,
+      [phoneTail]
+    );
+    if (matches.length === 1) {
+      row = matches[0];
+      await query(
+        `UPDATE users SET telegram_id = $1::bigint WHERE id = $2`,
+        [tgId, row.id]
       );
-      const placeholderEmail = `tg${tgId}@telegram.pending`;
-      const placeholderHash = await hashPassword(crypto.randomBytes(24).toString('hex'));
-      const { rows: [user] } = await client.query(
-        `INSERT INTO users (partner_id, email, password_hash, contact_name, telegram_id, role)
-           VALUES ($1, $2, $3, $4, $5::bigint, 'partner')
-         RETURNING id, partner_id, role`,
-        [partner.id, placeholderEmail, placeholderHash, displayName, tgId]
-      );
-      await client.query('COMMIT');
-      row = {
-        id: user.id,
-        partner_id: user.partner_id,
-        role: user.role,
-        partner_status: 'pending',
-      };
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
+    } else {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const { rows: [partner] } = await client.query(
+          `INSERT INTO partners (name, status) VALUES ($1, 'pending') RETURNING id`,
+          [company_name]
+        );
+        const placeholderEmail = `tg${tgId}@telegram.pending`;
+        const placeholderHash = await hashPassword(crypto.randomBytes(24).toString('hex'));
+        const { rows: [user] } = await client.query(
+          `INSERT INTO users (partner_id, email, phone, password_hash, contact_name, telegram_id, role)
+             VALUES ($1, $2, $3, $4, $5, $6::bigint, 'partner')
+           RETURNING id, partner_id, role`,
+          [partner.id, placeholderEmail, phone, placeholderHash, contactName, tgId]
+        );
+        await client.query('COMMIT');
+        row = {
+          id: user.id,
+          partner_id: user.partner_id,
+          warehouse_id: null,
+          role: user.role,
+          partner_status: 'pending',
+        };
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
     }
   }
 
   if (row.role === 'partner' && row.partner_status !== 'approved') {
     return res.status(403).json({ error: 'partner_not_approved', status: row.partner_status });
   }
+  if (row.role === 'warehouse' && !row.warehouse_id) {
+    return res.status(403).json({ error: 'no_warehouse' });
+  }
 
-  const token = signToken({ uid: row.id, pid: row.partner_id, role: row.role });
+  const token = signToken({
+    uid: row.id,
+    pid: row.partner_id,
+    wid: row.warehouse_id,
+    role: row.role,
+  });
   res.json({ token, role: row.role });
 });
 
