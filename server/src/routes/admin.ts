@@ -296,7 +296,7 @@ r.get('/partners', async (req, res) => {
   const params: any[] = [];
   let sql = `
     SELECT p.id, p.name, p.discount_percent, p.status, p.notes, p.created_at,
-           p.warehouse_id, w.name AS warehouse_name,
+           p.city, p.warehouse_id, w.name AS warehouse_name,
            COALESCE(u.users, '[]'::jsonb) AS users,
            COALESCE(a.addresses, '[]'::jsonb) AS addresses
       FROM partners p
@@ -326,6 +326,7 @@ const createPartnerSchema = z.object({
   name: z.string().min(1).max(255),
   discount_percent: z.number().min(0).max(100).optional(),
   notes: z.string().max(2000).optional(),
+  city: z.string().max(128).nullable().optional(),
   warehouse_id: z.string().uuid().optional(),
   user: z.object({
     email: z.string().email(),
@@ -351,9 +352,9 @@ r.post('/partners', async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows: [partner] } = await client.query(
-      `INSERT INTO partners (name, discount_percent, notes, status, warehouse_id)
-       VALUES ($1, COALESCE($2, 0), $3, 'approved', $4) RETURNING *`,
-      [p.data.name, p.data.discount_percent ?? null, p.data.notes ?? null, warehouseId]
+      `INSERT INTO partners (name, discount_percent, notes, status, warehouse_id, city)
+       VALUES ($1, COALESCE($2, 0), $3, 'approved', $4, $5) RETURNING *`,
+      [p.data.name, p.data.discount_percent ?? null, p.data.notes ?? null, warehouseId, p.data.city ?? null]
     );
     const hash = await hashPassword(p.data.user.password);
     await client.query(
@@ -375,6 +376,7 @@ const updatePartnerSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   discount_percent: z.number().min(0).max(100).optional(),
   notes: z.string().max(2000).nullable().optional(),
+  city: z.string().max(128).nullable().optional(),
   warehouse_id: z.string().uuid().nullable().optional(),
 });
 
@@ -386,7 +388,8 @@ r.put('/partners/:id', async (req, res) => {
        name = COALESCE($2, name),
        discount_percent = COALESCE($3, discount_percent),
        notes = COALESCE($4, notes),
-       warehouse_id = COALESCE($5, warehouse_id)
+       warehouse_id = COALESCE($5, warehouse_id),
+       city = COALESCE($6, city)
      WHERE id = $1 RETURNING *`,
     [
       req.params.id,
@@ -394,10 +397,37 @@ r.put('/partners/:id', async (req, res) => {
       p.data.discount_percent ?? null,
       p.data.notes ?? null,
       p.data.warehouse_id ?? null,
+      p.data.city ?? null,
     ]
   );
   if (!row) return res.status(404).json({ error: 'not found' });
   res.json(row);
+});
+
+// Add a partner user (i.e. a login) to an existing partner. Used to
+// activate partners that were imported without any users attached.
+const partnerUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  phone: z.string().max(50).optional(),
+  contact_name: z.string().max(255).optional(),
+});
+
+r.post('/partners/:id/users', async (req, res) => {
+  const p = partnerUserSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  const partner = await one(`SELECT id FROM partners WHERE id = $1`, [req.params.id]);
+  if (!partner) return res.status(404).json({ error: 'partner_not_found' });
+  const exists = await one(`SELECT 1 FROM users WHERE lower(email) = lower($1)`, [p.data.email]);
+  if (exists) return res.status(409).json({ error: 'email_taken' });
+  const hash = await hashPassword(p.data.password);
+  const row = await one(
+    `INSERT INTO users (partner_id, email, phone, password_hash, contact_name, role)
+     VALUES ($1, $2, $3, $4, $5, 'partner')
+     RETURNING id, email, phone, contact_name, telegram_id`,
+    [req.params.id, p.data.email, p.data.phone ?? null, hash, p.data.contact_name ?? null]
+  );
+  res.status(201).json(row);
 });
 
 const partnerStatusSchema = z.object({ status: z.enum(['pending', 'approved', 'rejected']) });
