@@ -123,6 +123,7 @@ export function AdminPartners() {
               onRestore={() => changeStatus(p.id, 'pending')}
               onDiscount={(n) => updateDiscount(p.id, n)}
               onWarehouse={(wid) => updateWarehouse(p.id, wid)}
+              onUserAdded={() => load(tab)}
             />
           ))}
         </ul>
@@ -152,6 +153,7 @@ function PartnerCard({
   onRestore,
   onDiscount,
   onWarehouse,
+  onUserAdded,
 }: {
   partner: AdminPartner;
   warehouses: Warehouse[];
@@ -160,9 +162,11 @@ function PartnerCard({
   onRestore: () => void;
   onDiscount: (n: number) => void;
   onWarehouse: (warehouseId: string) => void;
+  onUserAdded: () => void | Promise<void>;
 }) {
   const [discount, setDiscount] = useState<string>(String(partner.discount_percent));
   const [open, setOpen] = useState(partner.status === 'pending');
+  const [showAddUser, setShowAddUser] = useState(false);
 
   useEffect(() => {
     setDiscount(String(partner.discount_percent));
@@ -184,6 +188,7 @@ function PartnerCard({
         <div className="min-w-0">
           <div className="font-semibold text-burgundy-700">{partner.name}</div>
           <div className="text-xs text-neutral-500 mt-0.5">
+            {partner.city && <>{partner.city} · </>}
             {partner.users.length} користувач(ів) · {partner.addresses.length} адрес
           </div>
         </div>
@@ -245,9 +250,20 @@ function PartnerCard({
       {open && (
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
           <div>
-            <div className="font-medium text-neutral-700 mb-1">Користувачі</div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="font-medium text-neutral-700">Користувачі</div>
+              <button
+                type="button"
+                onClick={() => setShowAddUser(true)}
+                className="h-8 px-2 rounded-lg border border-burgundy-700 text-burgundy-700 text-xs"
+              >
+                + Додати
+              </button>
+            </div>
             {partner.users.length === 0 ? (
-              <div className="text-neutral-500">—</div>
+              <div className="text-neutral-500 text-xs">
+                Логіна ще немає — натисніть «+ Додати» щоб створити.
+              </div>
             ) : (
               <ul className="flex flex-col gap-1">
                 {partner.users.map((u) => (
@@ -288,7 +304,96 @@ function PartnerCard({
           )}
         </div>
       )}
+
+      {showAddUser && (
+        <AddUserModal
+          partnerId={partner.id}
+          onClose={() => setShowAddUser(false)}
+          onAdded={async () => {
+            setShowAddUser(false);
+            await onUserAdded();
+          }}
+        />
+      )}
     </li>
+  );
+}
+
+function AddUserModal({
+  partnerId,
+  onClose,
+  onAdded,
+}: {
+  partnerId: string;
+  onClose: () => void;
+  onAdded: () => void | Promise<void>;
+}) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
+  const [contact, setContact] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || password.length < 6) {
+      setErr('Перевірте поля (пароль мінімум 6 символів).');
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/admin/partners/${partnerId}/users`, {
+        method: 'POST',
+        body: {
+          email: email.trim(),
+          password,
+          phone: phone.trim() || undefined,
+          contact_name: contact.trim() || undefined,
+        },
+      });
+      await onAdded();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) setErr('Email вже зайнятий.');
+      else setErr('Не вдалося створити логін.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-20 flex items-center justify-center p-4" onClick={onClose}>
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={onSubmit}
+        className="bg-white rounded-xl shadow-lg w-full max-w-md p-4 flex flex-col gap-3"
+      >
+        <h2 className="font-bold text-burgundy-700">Новий логін для партнера</h2>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-neutral-600">Email</span>
+          <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-neutral-600">Пароль (мін. 6 символів)</span>
+          <input type="text" className="input" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-neutral-600">Ім'я (необов'язково)</span>
+          <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-neutral-600">Телефон (необов'язково)</span>
+          <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </label>
+        {err && <div className="text-sm text-burgundy-700">{err}</div>}
+        <div className="flex gap-2 mt-1">
+          <button type="submit" className="btn-primary flex-1" disabled={busy}>
+            {busy ? 'Збереження…' : 'Створити'}
+          </button>
+          <button type="button" onClick={onClose} className="btn-secondary" disabled={busy}>Скасувати</button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -298,6 +403,7 @@ function CreatePartnerModal({ warehouses, onClose, onCreated }: {
   onCreated: () => void;
 }) {
   const [name, setName] = useState('');
+  const [city, setCity] = useState('');
   const [discount, setDiscount] = useState('0');
   const [warehouseId, setWarehouseId] = useState<string>(warehouses[0]?.id ?? '');
   const [email, setEmail] = useState('');
@@ -321,6 +427,7 @@ function CreatePartnerModal({ warehouses, onClose, onCreated }: {
         method: 'POST',
         body: {
           name: name.trim(),
+          city: city.trim() || undefined,
           discount_percent: d,
           warehouse_id: warehouseId || undefined,
           user: {
@@ -350,6 +457,10 @@ function CreatePartnerModal({ warehouses, onClose, onCreated }: {
         <label className="flex flex-col gap-1">
           <span className="text-sm text-neutral-600">Назва</span>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-neutral-600">Місто</span>
+          <input className="input" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Київ" />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-sm text-neutral-600">Знижка, %</span>

@@ -126,6 +126,7 @@ export interface AdminPartner {
   status: PartnerStatus;
   notes: string | null;
   created_at: string;
+  city: string | null;
   warehouse_id: string | null;
   warehouse_name: string | null;
   users: AdminPartnerUser[];
