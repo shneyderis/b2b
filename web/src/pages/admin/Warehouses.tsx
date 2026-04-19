@@ -23,6 +23,20 @@ export function AdminWarehouses() {
 
   useEffect(() => { refresh(); }, []);
 
+  async function patchChatId(id: string, telegram_chat_id: string) {
+    const trimmed = telegram_chat_id.trim();
+    try {
+      const row = await api<Warehouse>(`/admin/warehouses/${id}`, {
+        method: 'PUT',
+        body: { telegram_chat_id: trimmed || null },
+      });
+      setItems((prev) => prev.map((w) => (w.id === id ? row : w)));
+    } catch {
+      alert('Не вдалося зберегти.');
+      await refresh();
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -37,6 +51,18 @@ export function AdminWarehouses() {
         </div>
       </div>
 
+      <div className="card text-xs text-neutral-600">
+        <div className="font-medium text-neutral-800 mb-1">Як отримати <code>Telegram chat ID</code> для складу</div>
+        <ol className="list-decimal list-inside space-y-1">
+          <li>Створи окрему групу в Telegram для цього складу.</li>
+          <li>Додай туди бота-нотифікатора (того самого, що й у менеджерську групу).</li>
+          <li>Напиши будь-яке повідомлення у групі.</li>
+          <li>Відкрий у браузері <code className="break-all">https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>.</li>
+          <li>Знайди блок <code>chat</code> — звідти скопіюй поле <code>id</code> (формат <code>-1001234567890</code>) у колонку нижче.</li>
+        </ol>
+        <div className="mt-2">Якщо поле порожнє — склад нотифікацій не отримує.</div>
+      </div>
+
       {loading ? (
         <div className="card">Завантаження…</div>
       ) : error ? (
@@ -44,14 +70,21 @@ export function AdminWarehouses() {
       ) : items.length === 0 ? (
         <div className="card text-neutral-500">Складів ще немає.</div>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {items.map((w) => (
-            <li key={w.id} className="card flex items-center justify-between">
-              <div className="font-medium">{w.name}</div>
-              <div className="text-xs text-neutral-500 font-mono truncate max-w-[50%]">{w.id.slice(0, 8)}</div>
-            </li>
-          ))}
-        </ul>
+        <section className="card overflow-x-auto p-0">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50 text-neutral-600">
+              <tr>
+                <th className="text-left px-3 py-2">Назва</th>
+                <th className="text-left px-3 py-2">Telegram chat ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((w) => (
+                <WarehouseRow key={w.id} warehouse={w} onPatchChat={(v) => patchChatId(w.id, v)} />
+              ))}
+            </tbody>
+          </table>
+        </section>
       )}
 
       {showCreateWh && (
@@ -75,8 +108,41 @@ export function AdminWarehouses() {
   );
 }
 
+function WarehouseRow({ warehouse, onPatchChat }: { warehouse: Warehouse; onPatchChat: (v: string) => Promise<void> | void }) {
+  const [chat, setChat] = useState<string>(warehouse.telegram_chat_id ?? '');
+
+  useEffect(() => {
+    setChat(warehouse.telegram_chat_id ?? '');
+  }, [warehouse.telegram_chat_id]);
+
+  function commit() {
+    if ((warehouse.telegram_chat_id ?? '') === chat.trim()) return;
+    void onPatchChat(chat);
+  }
+
+  return (
+    <tr className="border-t border-neutral-200">
+      <td className="px-3 py-2 font-medium">{warehouse.name}</td>
+      <td className="px-3 py-2">
+        <input
+          type="text"
+          value={chat}
+          onChange={(e) => setChat(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+          }}
+          placeholder="-1001234567890"
+          className="h-10 w-full max-w-xs px-2 rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500 font-mono text-xs"
+        />
+      </td>
+    </tr>
+  );
+}
+
 function CreateWarehouseModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void | Promise<void> }) {
   const [name, setName] = useState('');
+  const [chat, setChat] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -86,7 +152,10 @@ function CreateWarehouseModal({ onClose, onCreated }: { onClose: () => void; onC
     setBusy(true);
     setErr(null);
     try {
-      await api('/admin/warehouses', { method: 'POST', body: { name: name.trim() } });
+      await api('/admin/warehouses', {
+        method: 'POST',
+        body: { name: name.trim(), telegram_chat_id: chat.trim() || null },
+      });
       await onCreated();
     } catch (e) {
       setErr(e instanceof ApiError ? 'Не вдалося створити.' : 'Немає зв’язку з сервером.');
@@ -102,6 +171,10 @@ function CreateWarehouseModal({ onClose, onCreated }: { onClose: () => void; onC
         <label className="flex flex-col gap-1">
           <span className="text-sm text-neutral-600">Назва</span>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-neutral-600">Telegram chat ID (необов’язково)</span>
+          <input className="input font-mono text-xs" placeholder="-1001234567890" value={chat} onChange={(e) => setChat(e.target.value)} />
         </label>
         {err && <div className="text-sm text-burgundy-700">{err}</div>}
         <div className="flex gap-2 mt-1">

@@ -82,3 +82,41 @@ export async function notifyPartnerStatusChange(orderId: string, status: string)
     `Новий статус: <b>${label}</b>`;
   await sendTelegram(row.telegram_id, text);
 }
+
+export async function notifyWarehouseOrderConfirmed(orderId: string): Promise<void> {
+  const order = await one<{
+    order_number: number;
+    partner_name: string;
+    address_label: string;
+    address_text: string;
+    total_amount: string;
+    warehouse_chat_id: string | null;
+  }>(
+    `SELECT o.order_number, p.name AS partner_name,
+            da.label AS address_label, da.address AS address_text,
+            o.total_amount, w.telegram_chat_id AS warehouse_chat_id
+       FROM orders o
+       JOIN partners p ON p.id = o.partner_id
+       JOIN delivery_addresses da ON da.id = o.delivery_address_id
+       LEFT JOIN warehouses w ON w.id = p.warehouse_id
+      WHERE o.id = $1`,
+    [orderId]
+  );
+  if (!order || !order.warehouse_chat_id) return;
+  const items = await query<{ name: string; quantity: number; price: string }>(
+    `SELECT w.name, oi.quantity, oi.price
+       FROM order_items oi JOIN wines w ON w.id = oi.wine_id
+      WHERE oi.order_id = $1 ORDER BY w.sort_order, w.name`,
+    [orderId]
+  );
+  const list = items
+    .map((i) => `• ${escapeHtml(i.name)} × ${i.quantity} — ${i.price} ₴`)
+    .join('\n');
+  const text =
+    `<b>🍷 Замовлення №${order.order_number} готове до відвантаження</b>\n` +
+    `Партнер: ${escapeHtml(order.partner_name)}\n` +
+    `Адреса: ${escapeHtml(order.address_label)}, ${escapeHtml(order.address_text)}\n` +
+    `\n${list}\n\n` +
+    `Разом: <b>${order.total_amount} ₴</b>`;
+  await sendTelegram(order.warehouse_chat_id, text);
+}
