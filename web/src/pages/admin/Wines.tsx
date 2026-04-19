@@ -8,6 +8,7 @@ export function AdminWines() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     load();
@@ -26,14 +27,46 @@ export function AdminWines() {
     }
   }
 
+  async function patch(id: string, body: Partial<AdminWine>) {
+    try {
+      const row = await api<AdminWine>(`/admin/wines/${id}`, { method: 'PUT', body });
+      setWines((prev) => prev.map((w) => (w.id === id ? row : w)));
+    } catch {
+      alert('Не вдалося зберегти.');
+      await load();
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl font-bold text-burgundy-700">Вина</h1>
-        <button onClick={() => setShowCreate(true)} className="h-10 px-3 rounded-lg bg-burgundy-700 text-white text-sm font-medium">
-          + Додати вино
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setEditing((v) => !v)}
+            className={`h-10 px-3 rounded-lg text-sm font-medium border ${
+              editing
+                ? 'bg-burgundy-700 text-white border-burgundy-700'
+                : 'border-burgundy-700 text-burgundy-700'
+            }`}
+          >
+            {editing ? 'Готово' : 'Редагувати'}
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="h-10 px-3 rounded-lg bg-burgundy-700 text-white text-sm font-medium"
+          >
+            + Додати вино
+          </button>
+        </div>
       </div>
+
+      {editing && (
+        <div className="card text-xs text-neutral-600 bg-amber-50 border-amber-200">
+          Режим редагування. Ціна та залишок зберігаються по виходу з поля або Enter;
+          перемикач «Активне» — одразу.
+        </div>
+      )}
 
       {loading ? (
         <div className="card">Завантаження…</div>
@@ -52,18 +85,7 @@ export function AdminWines() {
             </thead>
             <tbody>
               {wines.map((w) => (
-                <tr key={w.id} className={`border-t border-neutral-200 ${!w.is_active ? 'opacity-60' : ''}`}>
-                  <td className="px-3 py-2">{w.name}</td>
-                  <td className="px-3 py-2 text-right">{formatMoney(w.price)}</td>
-                  <td className="px-3 py-2 text-right">{w.stock_quantity}</td>
-                  <td className="px-3 py-2 text-center">
-                    {w.is_active ? (
-                      <span className="text-xs rounded-full px-2 py-0.5 bg-green-50 text-green-700 border border-green-200">так</span>
-                    ) : (
-                      <span className="text-xs rounded-full px-2 py-0.5 bg-neutral-100 text-neutral-600 border border-neutral-200">ні</span>
-                    )}
-                  </td>
-                </tr>
+                <WineRow key={w.id} wine={w} editing={editing} onPatch={patch} />
               ))}
             </tbody>
           </table>
@@ -80,6 +102,108 @@ export function AdminWines() {
         />
       )}
     </div>
+  );
+}
+
+function WineRow({
+  wine,
+  editing,
+  onPatch,
+}: {
+  wine: AdminWine;
+  editing: boolean;
+  onPatch: (id: string, body: Partial<AdminWine>) => Promise<void>;
+}) {
+  const [price, setPrice] = useState<string>(String(wine.price));
+  const [stock, setStock] = useState<string>(String(wine.stock_quantity));
+
+  useEffect(() => {
+    setPrice(String(wine.price));
+    setStock(String(wine.stock_quantity));
+  }, [wine.price, wine.stock_quantity]);
+
+  function commitPrice() {
+    const n = Number(price.replace(',', '.'));
+    if (!Number.isFinite(n) || n < 0) {
+      setPrice(String(wine.price));
+      return;
+    }
+    if (n === Number(wine.price)) return;
+    void onPatch(wine.id, { price: n });
+  }
+
+  function commitStock() {
+    const n = Math.floor(Number(stock));
+    if (!Number.isFinite(n) || n < 0) {
+      setStock(String(wine.stock_quantity));
+      return;
+    }
+    if (n === wine.stock_quantity) return;
+    void onPatch(wine.id, { stock_quantity: n });
+  }
+
+  return (
+    <tr className={`border-t border-neutral-200 ${!wine.is_active ? 'opacity-60' : ''}`}>
+      <td className="px-3 py-2">{wine.name}</td>
+      <td className="px-3 py-2 text-right">
+        {editing ? (
+          <input
+            type="text"
+            inputMode="decimal"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            onBlur={commitPrice}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+            }}
+            className="h-10 w-full px-2 text-right rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
+          />
+        ) : (
+          formatMoney(wine.price)
+        )}
+      </td>
+      <td className="px-3 py-2 text-right">
+        {editing ? (
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={stock}
+            onChange={(e) => setStock(e.target.value)}
+            onBlur={commitStock}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+            }}
+            className="h-10 w-full px-2 text-right rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
+          />
+        ) : (
+          wine.stock_quantity
+        )}
+      </td>
+      <td className="px-3 py-2 text-center">
+        {editing ? (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={wine.is_active}
+            onClick={() => onPatch(wine.id, { is_active: !wine.is_active })}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+              wine.is_active ? 'bg-burgundy-700' : 'bg-neutral-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-5 w-5 rounded-full bg-white transition ${
+                wine.is_active ? 'translate-x-5' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        ) : wine.is_active ? (
+          <span className="text-xs rounded-full px-2 py-0.5 bg-green-50 text-green-700 border border-green-200">так</span>
+        ) : (
+          <span className="text-xs rounded-full px-2 py-0.5 bg-neutral-100 text-neutral-600 border border-neutral-200">ні</span>
+        )}
+      </td>
+    </tr>
   );
 }
 
