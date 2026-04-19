@@ -151,7 +151,10 @@ r.post('/orders/parse', async (req, res) => {
     res.json(result);
   } catch (e: any) {
     const status = typeof e?.status === 'number' ? e.status : 500;
-    res.status(status).json({ error: e?.message ?? 'parse_failed' });
+    res.status(status).json({
+      error: e?.message ?? 'parse_failed',
+      detail: e?.detail ?? null,
+    });
   }
 });
 

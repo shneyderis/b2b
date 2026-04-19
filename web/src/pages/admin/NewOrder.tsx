@@ -153,8 +153,11 @@ export function AdminNewOrder() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 503) {
         setParseError('LLM не налаштовано на сервері.');
+      } else if (err instanceof ApiError) {
+        const detail = err.data?.detail || err.data?.error || err.message;
+        setParseError(`Не вдалося розпізнати: ${detail}`);
       } else {
-        setParseError('Не вдалося розпізнати текст. Спробуйте ще раз.');
+        setParseError('Немає зв’язку з сервером.');
       }
     } finally {
       setParseBusy(false);
