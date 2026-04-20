@@ -60,7 +60,7 @@ type PartnerRow = {
 async function findPartnersByHint(hint: string): Promise<PartnerRow[]> {
   const normalized = hint.toLowerCase().replace(/[«»"'`]/g, '').trim();
   if (!normalized) return [];
-  return await query<PartnerRow>(
+  const exact = await query<PartnerRow>(
     `SELECT p.id, p.name, p.legal_name, p.city, p.discount_percent,
             (SELECT id FROM delivery_addresses da
               WHERE da.partner_id = p.id
@@ -74,6 +74,26 @@ async function findPartnersByHint(hint: string): Promise<PartnerRow[]> {
       ORDER BY length(p.name), p.name
       LIMIT 6`,
     [`%${normalized}%`]
+  );
+  if (exact.length > 0) return exact;
+  return await query<PartnerRow>(
+    `SELECT p.id, p.name, p.legal_name, p.city, p.discount_percent,
+            (SELECT id FROM delivery_addresses da
+              WHERE da.partner_id = p.id
+              ORDER BY is_default DESC, created_at LIMIT 1) AS default_address_id
+       FROM partners p
+      WHERE p.status = 'approved'
+        AND (
+          similarity(lower(p.name), $1) > 0.3
+          OR (p.legal_name IS NOT NULL AND similarity(lower(p.legal_name), $1) > 0.3)
+        )
+      ORDER BY GREATEST(
+                 similarity(lower(p.name), $1),
+                 COALESCE(similarity(lower(p.legal_name), $1), 0)
+               ) DESC,
+               length(p.name)
+      LIMIT 6`,
+    [normalized]
   );
 }
 
