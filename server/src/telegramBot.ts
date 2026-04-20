@@ -317,6 +317,22 @@ async function processOrderText(msg: TgMessage, fromId: number, text: string): P
   });
 }
 
+function partnerKeyboard(): Record<string, unknown> | null {
+  const base = env.TELEGRAM_MINIAPP_URL.replace(/\/$/, '');
+  if (!base) return null;
+  return {
+    keyboard: [
+      [{ text: '🛒 Новий заказ', web_app: { url: `${base}/orders/new` } }],
+      [
+        { text: '📋 Мої замовлення', web_app: { url: `${base}/orders` } },
+        { text: '👤 Профіль', web_app: { url: `${base}/profile` } },
+      ],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
+
 async function greetNonAdmin(chatId: number, tgUserId: number): Promise<void> {
   const partner = await one<{ partner_name: string; partner_status: string }>(
     `SELECT p.name AS partner_name, p.status AS partner_status
@@ -326,23 +342,29 @@ async function greetNonAdmin(chatId: number, tgUserId: number): Promise<void> {
     [tgUserId]
   );
   if (partner && partner.partner_status === 'approved') {
+    const kb = partnerKeyboard();
     await sendMessage(
       chatId,
       `Вітаю, <b>${escapeHtml(partner.partner_name)}</b>! 🍷\n\n` +
-        `Щоб зробити замовлення, відкрий каталог — синя кнопка <b>«Відкрити каталог»</b> ліворуч від поля вводу.`
+        (kb
+          ? `Обери дію на клавіатурі нижче.`
+          : `Щоб зробити замовлення, відкрий каталог — синя кнопка <b>«Відкрити каталог»</b> ліворуч від поля вводу.`),
+      kb ? { reply_markup: kb } : {}
     );
     return;
   }
   if (partner && partner.partner_status !== 'approved') {
     await sendMessage(
       chatId,
-      `Заявка на партнерство ще на розгляді. Після схвалення менеджером відкрий Mini App.`
+      `Заявка на партнерство ще на розгляді. Після схвалення менеджером відкрий Mini App.`,
+      { reply_markup: { remove_keyboard: true } }
     );
     return;
   }
   await sendMessage(
     chatId,
-    `⛔ Доступ лише для адмінів. Твій Telegram ID: <code>${tgUserId}</code>`
+    `⛔ Доступ лише для адмінів. Твій Telegram ID: <code>${tgUserId}</code>`,
+    { reply_markup: { remove_keyboard: true } }
   );
 }
 
