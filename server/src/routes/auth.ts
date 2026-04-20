@@ -179,7 +179,10 @@ r.post('/telegram', async (req, res) => {
   }>(
     `SELECT u.id, u.partner_id, u.warehouse_id, u.role, p.status AS partner_status
        FROM users u LEFT JOIN partners p ON p.id = u.partner_id
-      WHERE u.telegram_id = $1::bigint`,
+      WHERE u.telegram_id = $1::bigint
+      ORDER BY CASE u.role WHEN 'admin' THEN 0 WHEN 'warehouse' THEN 1 ELSE 2 END,
+               u.created_at
+      LIMIT 1`,
     [tgId]
   );
 
