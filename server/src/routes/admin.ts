@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import crypto from 'node:crypto';
 import { one, pool, query } from '../db.js';
 import { requireAdmin, requireAuth, hashPassword } from '../auth.js';
 import { streamOrderPdf } from '../pdf.js';
@@ -536,6 +537,92 @@ r.put('/partners/:id/status', async (req, res) => {
   );
   if (!row) return res.status(404).json({ error: 'not found' });
   res.json(row);
+});
+
+const updateUserSchema = z.object({
+  email: z.string().email().optional(),
+  phone: z.string().max(50).nullable().optional(),
+  contact_name: z.string().max(255).nullable().optional(),
+});
+
+r.put('/partners/:partnerId/users/:userId', async (req, res) => {
+  const p = updateUserSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  const { partnerId, userId } = req.params;
+  const existing = await one<{ id: string; email: string }>(
+    `SELECT id, email FROM users WHERE id = $1 AND partner_id = $2 AND role = 'partner'`,
+    [userId, partnerId]
+  );
+  if (!existing) return res.status(404).json({ error: 'not_found' });
+  if (p.data.email && p.data.email.toLowerCase() !== existing.email.toLowerCase()) {
+    const clash = await one(
+      `SELECT 1 FROM users WHERE lower(email) = lower($1) AND id <> $2`,
+      [p.data.email, userId]
+    );
+    if (clash) return res.status(409).json({ error: 'email_taken' });
+  }
+  const hasPhone = Object.prototype.hasOwnProperty.call(p.data, 'phone');
+  const hasContact = Object.prototype.hasOwnProperty.call(p.data, 'contact_name');
+  const row = await one(
+    `UPDATE users SET
+       email = COALESCE($3, email),
+       phone = CASE WHEN $4::boolean THEN $5 ELSE phone END,
+       contact_name = CASE WHEN $6::boolean THEN $7 ELSE contact_name END
+     WHERE id = $1 AND partner_id = $2
+     RETURNING id, email, phone, contact_name, telegram_id`,
+    [
+      userId,
+      partnerId,
+      p.data.email ?? null,
+      hasPhone,
+      p.data.phone ?? null,
+      hasContact,
+      p.data.contact_name ?? null,
+    ]
+  );
+  res.json(row);
+});
+
+r.delete('/partners/:partnerId/users/:userId', async (req, res) => {
+  const { partnerId, userId } = req.params;
+  if (req.user?.uid === userId) return res.status(409).json({ error: 'self_delete' });
+  const remaining = await one<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+       FROM users WHERE partner_id = $1 AND role = 'partner' AND id <> $2`,
+    [partnerId, userId]
+  );
+  if (!remaining || Number(remaining.count) === 0) {
+    return res.status(409).json({ error: 'last_user' });
+  }
+  const deleted = await one(
+    `DELETE FROM users
+      WHERE id = $1 AND partner_id = $2 AND role = 'partner'
+      RETURNING id`,
+    [userId, partnerId]
+  );
+  if (!deleted) return res.status(404).json({ error: 'not_found' });
+  res.json({ ok: true });
+});
+
+function generatePassword(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const bytes = crypto.randomBytes(10);
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) out += alphabet[bytes[i] % alphabet.length];
+  return out;
+}
+
+r.post('/partners/:partnerId/users/:userId/reset-password', async (req, res) => {
+  const { partnerId, userId } = req.params;
+  const user = await one<{ id: string }>(
+    `SELECT id FROM users WHERE id = $1 AND partner_id = $2 AND role = 'partner'`,
+    [userId, partnerId]
+  );
+  if (!user) return res.status(404).json({ error: 'not_found' });
+  const password = generatePassword();
+  const hash = await hashPassword(password);
+  await query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [userId, hash]);
+  res.json({ password });
 });
 
 export default r;
