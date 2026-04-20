@@ -18,7 +18,10 @@ async function getCatalog(): Promise<CatalogEntry[]> {
   return rows;
 }
 
-export type ParsedOrder = { items: { wine_id: string; quantity: number }[] };
+export type ParsedOrder = {
+  partner_hint: string | null;
+  items: { wine_id: string; quantity: number }[];
+};
 
 function fail(status: number, code: string, detail?: string): never {
   const err: any = new Error(code);
@@ -39,10 +42,13 @@ export async function parseOrderText(text: string): Promise<ParsedOrder> {
     `Ти розпізнаєш замовлення вина з довільного українського/російського тексту. ` +
     `Каталог (id та повна назва):\n` +
     JSON.stringify(catalog) +
-    `\n\nВитягни позиції з тексту користувача та поверни ЛИШЕ валідний JSON вигляду ` +
-    `{"items":[{"wine_id":"<uuid з каталогу>","quantity":<ціле додатне число>}]}. ` +
+    `\n\nВитягни з тексту користувача назву партнера/закладу (якщо згадана) ` +
+    `та позиції. Поверни ЛИШЕ валідний JSON вигляду ` +
+    `{"partner_hint":"<назва партнера/закладу як написано в тексті, або null>",` +
+    `"items":[{"wine_id":"<uuid з каталогу>","quantity":<ціле додатне число>}]}. ` +
     `Підбирай wine_id з найближчою назвою (ігноруй регістр, рік, дрібні відмінності). ` +
     `Якщо кількість не вказана — 1. Якщо позицію не впізнано — пропусти її. ` +
+    `partner_hint — це назва закладу, ТОВ, ресторана тощо; якщо нічого не вказано — null. ` +
     `Без markdown, без пояснень, лише JSON.`;
 
   let resp;
@@ -84,5 +90,7 @@ export async function parseOrderText(text: string): Promise<ParsedOrder> {
     if (!Number.isFinite(qty) || qty <= 0) continue;
     items.push({ wine_id: id, quantity: Math.floor(qty) });
   }
-  return { items };
+  const hintRaw = typeof parsed?.partner_hint === 'string' ? parsed.partner_hint.trim() : '';
+  const partner_hint = hintRaw && hintRaw.toLowerCase() !== 'null' ? hintRaw : null;
+  return { partner_hint, items };
 }

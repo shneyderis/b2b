@@ -7,6 +7,7 @@ import wineRoutes from './routes/wines.js';
 import orderRoutes from './routes/orders.js';
 import adminRoutes from './routes/admin.js';
 import warehouseRoutes from './routes/warehouse.js';
+import telegramWebhookRoutes from './routes/telegramWebhook.js';
 
 export function createApp() {
   const app = express();
@@ -21,6 +22,7 @@ export function createApp() {
   app.use('/api/orders', orderRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/warehouse', warehouseRoutes);
+  app.use('/api/telegram', telegramWebhookRoutes);
 
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err);

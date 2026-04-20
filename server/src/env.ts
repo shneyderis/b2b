@@ -13,5 +13,7 @@ export const env = {
   PORT: Number(process.env.PORT) || 3001,
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
   TELEGRAM_MANAGERS_CHAT_ID: process.env.TELEGRAM_MANAGERS_CHAT_ID || '',
+  TELEGRAM_ADMIN_IDS: process.env.TELEGRAM_ADMIN_IDS || '',
+  TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
 };

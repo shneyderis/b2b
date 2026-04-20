@@ -1,0 +1,349 @@
+import { env } from './env.js';
+import { one, query } from './db.js';
+import { parseOrderText } from './orderParser.js';
+import { createAdminOrder, AdminOrderError } from './adminOrders.js';
+
+type TgUser = { id: number; first_name?: string; username?: string };
+type TgChat = { id: number };
+type TgMessage = {
+  message_id: number;
+  from?: TgUser;
+  chat: TgChat;
+  text?: string;
+  voice?: { file_id: string; duration: number };
+};
+type TgCallbackQuery = {
+  id: string;
+  from: TgUser;
+  message?: { chat: TgChat; message_id: number };
+  data?: string;
+};
+export type TgUpdate = {
+  update_id: number;
+  message?: TgMessage;
+  callback_query?: TgCallbackQuery;
+};
+
+export function isAdminId(telegramId: number): boolean {
+  if (!env.TELEGRAM_ADMIN_IDS) return false;
+  return env.TELEGRAM_ADMIN_IDS.split(',')
+    .map((s) => s.trim())
+    .includes(String(telegramId));
+}
+
+async function tg(method: string, body: Record<string, unknown>): Promise<any> {
+  if (!env.TELEGRAM_BOT_TOKEN) return null;
+  const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await resp.json().catch(() => null);
+  if (!resp.ok) console.error('[tgBot]', method, 'failed', resp.status, data);
+  return data;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+type PartnerRow = {
+  id: string;
+  name: string;
+  city: string | null;
+  discount_percent: string;
+  default_address_id: string | null;
+};
+
+async function findPartnersByHint(hint: string): Promise<PartnerRow[]> {
+  const normalized = hint.toLowerCase().replace(/[«»"'`]/g, '').trim();
+  if (!normalized) return [];
+  return await query<PartnerRow>(
+    `SELECT p.id, p.name, p.city, p.discount_percent,
+            (SELECT id FROM delivery_addresses da
+              WHERE da.partner_id = p.id
+              ORDER BY is_default DESC, created_at LIMIT 1) AS default_address_id
+       FROM partners p
+      WHERE p.status = 'approved'
+        AND lower(p.name) ILIKE $1
+      ORDER BY length(p.name), p.name
+      LIMIT 6`,
+    [`%${normalized}%`]
+  );
+}
+
+async function pickAdminUserId(telegramId: number): Promise<string | null> {
+  const r = await one<{ id: string }>(
+    `SELECT id FROM users
+      WHERE role = 'admin'
+      ORDER BY (telegram_id = $1) DESC, created_at
+      LIMIT 1`,
+    [telegramId]
+  );
+  return r?.id ?? null;
+}
+
+async function sendMessage(chatId: number, text: string, extra: Record<string, unknown> = {}) {
+  await tg('sendMessage', {
+    chat_id: chatId,
+    text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    ...extra,
+  });
+}
+
+async function editMessage(
+  chatId: number,
+  messageId: number,
+  text: string,
+  extra: Record<string, unknown> = {}
+) {
+  await tg('editMessageText', {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    ...extra,
+  });
+}
+
+async function answerCallback(callbackId: string, text?: string) {
+  await tg('answerCallbackQuery', { callback_query_id: callbackId, text });
+}
+
+function renderPreview(
+  partner: PartnerRow,
+  items: { name: string; quantity: number; price: number }[],
+  total: number
+) {
+  const list = items.map((i) => `• ${escapeHtml(i.name)} × ${i.quantity} — ${i.price} ₴`).join('\n');
+  return (
+    `<b>🍷 Нове замовлення</b>\n` +
+    `Партнер: <b>${escapeHtml(partner.name)}</b>` +
+    (partner.city ? ` (${escapeHtml(partner.city)})` : '') +
+    `\n\n${list}\n\n` +
+    `Разом: <b>${total} ₴</b>\n` +
+    `Натисни «Підтвердити» щоб створити замовлення.`
+  );
+}
+
+export async function handleTelegramUpdate(update: TgUpdate): Promise<void> {
+  try {
+    if (update.callback_query) await handleCallback(update.callback_query);
+    else if (update.message) await handleMessage(update.message);
+  } catch (e) {
+    console.error('[tgBot] unhandled error', e);
+  }
+}
+
+async function handleMessage(msg: TgMessage): Promise<void> {
+  const from = msg.from;
+  if (!from) return;
+  if (!isAdminId(from.id)) {
+    await sendMessage(
+      msg.chat.id,
+      `⛔ Доступ лише для адмінів. Твій Telegram ID: <code>${from.id}</code>`
+    );
+    return;
+  }
+
+  if (msg.voice) {
+    await sendMessage(msg.chat.id, 'Голосові повідомлення підключимо наступним кроком.');
+    return;
+  }
+
+  const text = (msg.text ?? '').trim();
+  if (!text) return;
+  if (text.startsWith('/start')) {
+    await sendMessage(
+      msg.chat.id,
+      `Надішли текст замовлення, наприклад:\n<code>Артанія: 3 каберне, 2 шардоне</code>`
+    );
+    return;
+  }
+  if (text.startsWith('/id')) {
+    await sendMessage(msg.chat.id, `Твій Telegram ID: <code>${from.id}</code>`);
+    return;
+  }
+
+  await sendMessage(msg.chat.id, '⏳ Розпізнаю…');
+
+  let parsed;
+  try {
+    parsed = await parseOrderText(text);
+  } catch (e: any) {
+    const detail = e?.detail || e?.message || 'помилка LLM';
+    await sendMessage(msg.chat.id, `❌ Не вдалося розпізнати: ${escapeHtml(String(detail))}`);
+    return;
+  }
+
+  if (parsed.items.length === 0) {
+    await sendMessage(msg.chat.id, '❌ Жодної позиції не впізнано з каталогу.');
+    return;
+  }
+  if (!parsed.partner_hint) {
+    await sendMessage(
+      msg.chat.id,
+      '❌ Не вказано партнера. Додай назву закладу на початку, напр. <code>Артанія: 3 каберне</code>.'
+    );
+    return;
+  }
+
+  const candidates = await findPartnersByHint(parsed.partner_hint);
+  if (candidates.length === 0) {
+    await sendMessage(
+      msg.chat.id,
+      `❌ Партнера «${escapeHtml(parsed.partner_hint)}» не знайдено.`
+    );
+    return;
+  }
+  if (candidates.length > 1) {
+    const list = candidates
+      .map((p, i) => `${i + 1}. ${escapeHtml(p.name)}${p.city ? ` (${escapeHtml(p.city)})` : ''}`)
+      .join('\n');
+    await sendMessage(
+      msg.chat.id,
+      `❓ Знайдено кілька партнерів для «${escapeHtml(parsed.partner_hint)}»:\n${list}\n\nУточни назву.`
+    );
+    return;
+  }
+
+  const partner = candidates[0];
+  if (!partner.default_address_id) {
+    await sendMessage(
+      msg.chat.id,
+      `❌ У партнера <b>${escapeHtml(partner.name)}</b> немає збереженої адреси. Додай її у веб-версії.`
+    );
+    return;
+  }
+
+  const discount = Number(partner.discount_percent);
+  const ids = parsed.items.map((i) => i.wine_id);
+  const wines = await query<{ id: string; name: string; price: string; stock_quantity: number; is_active: boolean }>(
+    `SELECT id, name, price, stock_quantity, is_active FROM wines WHERE id = ANY($1::uuid[])`,
+    [ids]
+  );
+  const byId = new Map(wines.map((w) => [w.id, w]));
+  const priced: { wine_id: string; name: string; quantity: number; price: number }[] = [];
+  let total = 0;
+  for (const it of parsed.items) {
+    const w = byId.get(it.wine_id);
+    if (!w || !w.is_active || w.stock_quantity <= 0) continue;
+    const price = Math.round(Number(w.price) * (100 - discount)) / 100;
+    priced.push({ wine_id: it.wine_id, name: w.name, quantity: it.quantity, price });
+    total += price * it.quantity;
+  }
+  total = Math.round(total * 100) / 100;
+  if (priced.length === 0) {
+    await sendMessage(msg.chat.id, '❌ Усі розпізнані позиції недоступні (вимкнені або немає залишку).');
+    return;
+  }
+
+  const pending = await one<{ id: string }>(
+    `INSERT INTO pending_telegram_orders
+       (telegram_user_id, telegram_chat_id, telegram_message_id,
+        partner_id, delivery_address_id, items, raw_text)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+     RETURNING id`,
+    [
+      from.id,
+      msg.chat.id,
+      msg.message_id,
+      partner.id,
+      partner.default_address_id,
+      JSON.stringify(priced.map((p) => ({ wine_id: p.wine_id, quantity: p.quantity }))),
+      text,
+    ]
+  );
+  if (!pending) return;
+
+  await sendMessage(msg.chat.id, renderPreview(partner, priced, total), {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: '✅ Підтвердити', callback_data: `confirm:${pending.id}` },
+          { text: '✖️ Скасувати', callback_data: `cancel:${pending.id}` },
+        ],
+      ],
+    },
+  });
+}
+
+async function handleCallback(cb: TgCallbackQuery): Promise<void> {
+  if (!isAdminId(cb.from.id)) {
+    await answerCallback(cb.id, 'Доступ лише для адмінів');
+    return;
+  }
+  const data = cb.data ?? '';
+  const [action, pendingId] = data.split(':');
+  if (!pendingId) {
+    await answerCallback(cb.id);
+    return;
+  }
+  const pending = await one<{
+    id: string;
+    partner_id: string;
+    delivery_address_id: string;
+    items: { wine_id: string; quantity: number }[];
+    raw_text: string | null;
+  }>(
+    `SELECT id, partner_id, delivery_address_id, items, raw_text
+       FROM pending_telegram_orders
+      WHERE id = $1 AND telegram_user_id = $2`,
+    [pendingId, cb.from.id]
+  );
+  if (!pending) {
+    await answerCallback(cb.id, 'Заявка вже оброблена');
+    if (cb.message) await editMessage(cb.message.chat.id, cb.message.message_id, '⚠️ Заявка вже оброблена');
+    return;
+  }
+
+  if (action === 'cancel') {
+    await query(`DELETE FROM pending_telegram_orders WHERE id = $1`, [pending.id]);
+    await answerCallback(cb.id, 'Скасовано');
+    if (cb.message) await editMessage(cb.message.chat.id, cb.message.message_id, '✖️ Скасовано');
+    return;
+  }
+
+  if (action !== 'confirm') {
+    await answerCallback(cb.id);
+    return;
+  }
+
+  const adminUserId = await pickAdminUserId(cb.from.id);
+  if (!adminUserId) {
+    await answerCallback(cb.id, 'Немає жодного адмін-користувача в БД');
+    return;
+  }
+
+  try {
+    const order = await createAdminOrder({
+      partnerId: pending.partner_id,
+      deliveryAddressId: pending.delivery_address_id,
+      adminUserId,
+      items: pending.items,
+      comment: pending.raw_text ? `Telegram: ${pending.raw_text}`.slice(0, 2000) : null,
+    });
+    await query(`DELETE FROM pending_telegram_orders WHERE id = $1`, [pending.id]);
+    await answerCallback(cb.id, 'Створено');
+    if (cb.message)
+      await editMessage(
+        cb.message.chat.id,
+        cb.message.message_id,
+        `✅ Замовлення №${order.order_number} створено.`
+      );
+  } catch (e) {
+    const code = e instanceof AdminOrderError ? e.message : 'internal_error';
+    console.error('[tgBot] createAdminOrder failed', e);
+    await answerCallback(cb.id, 'Помилка');
+    if (cb.message)
+      await editMessage(
+        cb.message.chat.id,
+        cb.message.message_id,
+        `❌ Помилка створення: ${escapeHtml(code)}`
+      );
+  }
+}
+
