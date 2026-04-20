@@ -229,12 +229,15 @@ async function handleMessage(msg: TgMessage): Promise<void> {
 
   if (!text) return;
   if (text.startsWith('/start') || text.startsWith('/help')) {
+    const kb = adminKeyboard();
     await sendMessage(
       msg.chat.id,
       `Надішли замовлення одним зі способів:\n` +
         `• текст, напр. <code>Артанія: 3 каберне, 2 шардоне</code>\n` +
         `• голосове — розпізнаю на льоту\n` +
-        `• скріншот переписки або фото паперового замовлення`
+        `• скріншот переписки або фото паперового замовлення` +
+        (kb ? `\n\nЧи обери розділ на клавіатурі нижче.` : ''),
+      kb ? { reply_markup: kb } : {}
     );
     return;
   }
@@ -401,6 +404,26 @@ function partnerKeyboard(): Record<string, unknown> | null {
       [
         { text: '📋 Мої замовлення', web_app: { url: `${base}/orders` } },
         { text: '👤 Профіль', web_app: { url: `${base}/profile` } },
+      ],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
+
+function adminKeyboard(): Record<string, unknown> | null {
+  const base = env.TELEGRAM_MINIAPP_URL.replace(/\/$/, '');
+  if (!base) return null;
+  return {
+    keyboard: [
+      [{ text: '🛒 Новий заказ', web_app: { url: `${base}/admin/orders/new` } }],
+      [
+        { text: '📋 Замовлення', web_app: { url: `${base}/admin/orders` } },
+        { text: '👥 Партнери', web_app: { url: `${base}/admin/partners` } },
+      ],
+      [
+        { text: '🍷 Вина', web_app: { url: `${base}/admin/wines` } },
+        { text: '📦 Склад', web_app: { url: `${base}/admin/warehouses` } },
       ],
     ],
     resize_keyboard: true,
