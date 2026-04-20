@@ -1,17 +1,22 @@
 import { env } from './env.js';
 import { one, query } from './db.js';
-import { parseOrderText } from './orderParser.js';
+import { parseOrderText, parseOrderImage, ParsedOrder, OrderImageMediaType } from './orderParser.js';
 import { createAdminOrder, AdminOrderError } from './adminOrders.js';
 import { transcribeVoice, buildVoiceVocabPrompt } from './voiceTranscriber.js';
 
 type TgUser = { id: number; first_name?: string; username?: string };
 type TgChat = { id: number };
+type TgPhotoSize = { file_id: string; width: number; height: number; file_size?: number };
+type TgDocument = { file_id: string; mime_type?: string; file_size?: number };
 type TgMessage = {
   message_id: number;
   from?: TgUser;
   chat: TgChat;
   text?: string;
+  caption?: string;
   voice?: { file_id: string; duration: number };
+  photo?: TgPhotoSize[];
+  document?: TgDocument;
 };
 type TgCallbackQuery = {
   id: string;
@@ -216,12 +221,20 @@ async function handleMessage(msg: TgMessage): Promise<void> {
     return;
   }
 
+  const imageSource = pickImageSource(msg);
+  if (imageSource) {
+    await handleImageOrder(msg, from.id, imageSource.fileId, imageSource.mediaType);
+    return;
+  }
+
   if (!text) return;
-  if (text.startsWith('/start')) {
+  if (text.startsWith('/start') || text.startsWith('/help')) {
     await sendMessage(
       msg.chat.id,
-      `Надішли текст замовлення, наприклад:\n<code>Артанія: 3 каберне, 2 шардоне</code>\n\n` +
-        `Або надішли голосове — розпізнаю на льоту.`
+      `Надішли замовлення одним зі способів:\n` +
+        `• текст, напр. <code>Артанія: 3 каберне, 2 шардоне</code>\n` +
+        `• голосове — розпізнаю на льоту\n` +
+        `• скріншот переписки або фото паперового замовлення`
     );
     return;
   }
@@ -230,8 +243,42 @@ async function handleMessage(msg: TgMessage): Promise<void> {
   await processOrderText(msg, from.id, text);
 }
 
+function pickImageSource(msg: TgMessage): { fileId: string; mediaType: OrderImageMediaType } | null {
+  if (msg.photo && msg.photo.length > 0) {
+    const largest = msg.photo.reduce((a, b) =>
+      (b.width * b.height) > (a.width * a.height) ? b : a
+    );
+    return { fileId: largest.file_id, mediaType: 'image/jpeg' };
+  }
+  if (msg.document?.file_id && msg.document.mime_type?.startsWith('image/')) {
+    const mt = msg.document.mime_type as OrderImageMediaType;
+    const allowed: OrderImageMediaType[] = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (allowed.includes(mt)) return { fileId: msg.document.file_id, mediaType: mt };
+  }
+  return null;
+}
+
+async function handleImageOrder(
+  msg: TgMessage,
+  fromId: number,
+  fileId: string,
+  mediaType: OrderImageMediaType
+): Promise<void> {
+  await sendMessage(msg.chat.id, '🖼 Читаю скріншот…');
+  let parsed: ParsedOrder;
+  try {
+    const buf = await downloadTelegramFile(fileId);
+    parsed = await parseOrderImage(buf.toString('base64'), mediaType);
+  } catch (e: any) {
+    const detail = e?.detail || e?.message || 'помилка LLM';
+    await sendMessage(msg.chat.id, `❌ Не вдалося розпізнати скріншот: ${escapeHtml(String(detail))}`);
+    return;
+  }
+  await processParsedOrder(msg, fromId, parsed, '[screenshot]');
+}
+
 async function processOrderText(msg: TgMessage, fromId: number, text: string): Promise<void> {
-  let parsed;
+  let parsed: ParsedOrder;
   try {
     parsed = await parseOrderText(text);
   } catch (e: any) {
@@ -239,7 +286,15 @@ async function processOrderText(msg: TgMessage, fromId: number, text: string): P
     await sendMessage(msg.chat.id, `❌ Не вдалося розпізнати: ${escapeHtml(String(detail))}`);
     return;
   }
+  await processParsedOrder(msg, fromId, parsed, text);
+}
 
+async function processParsedOrder(
+  msg: TgMessage,
+  fromId: number,
+  parsed: ParsedOrder,
+  rawText: string
+): Promise<void> {
   if (parsed.items.length === 0) {
     await sendMessage(msg.chat.id, '❌ Жодної позиції не впізнано з каталогу.');
     return;
@@ -320,7 +375,7 @@ async function processOrderText(msg: TgMessage, fromId: number, text: string): P
       partner.id,
       partner.default_address_id,
       JSON.stringify(priced.map((p) => ({ wine_id: p.wine_id, quantity: p.quantity }))),
-      text,
+      rawText,
     ]
   );
   if (!pending) return;
