@@ -2,6 +2,7 @@ import { env } from './env.js';
 import { one, query } from './db.js';
 import { parseOrderText } from './orderParser.js';
 import { createAdminOrder, AdminOrderError } from './adminOrders.js';
+import { transcribeVoice } from './voiceTranscriber.js';
 
 type TgUser = { id: number; first_name?: string; username?: string };
 type TgChat = { id: number };
@@ -147,6 +148,16 @@ export async function handleTelegramUpdate(update: TgUpdate): Promise<void> {
   }
 }
 
+async function downloadTelegramFile(fileId: string): Promise<Buffer> {
+  const info = await tg('getFile', { file_id: fileId });
+  const filePath = info?.result?.file_path;
+  if (!filePath) throw new Error('telegram_file_path_missing');
+  const url = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`telegram_file_download_${r.status}`);
+  return Buffer.from(await r.arrayBuffer());
+}
+
 async function handleMessage(msg: TgMessage): Promise<void> {
   const from = msg.from;
   if (!from) return;
@@ -163,7 +174,22 @@ async function handleMessage(msg: TgMessage): Promise<void> {
   }
 
   if (msg.voice) {
-    await sendMessage(msg.chat.id, 'Голосові повідомлення підключимо наступним кроком.');
+    await sendMessage(msg.chat.id, '🎙 Розпізнаю голос…');
+    let transcript: string;
+    try {
+      const buf = await downloadTelegramFile(msg.voice.file_id);
+      transcript = await transcribeVoice(buf);
+    } catch (e: any) {
+      const detail = e?.detail || e?.message || 'помилка транскрипції';
+      await sendMessage(msg.chat.id, `❌ Не вдалося розпізнати голос: ${escapeHtml(String(detail))}`);
+      return;
+    }
+    if (!transcript) {
+      await sendMessage(msg.chat.id, '❌ Голос порожній або нерозбірливий.');
+      return;
+    }
+    await sendMessage(msg.chat.id, `🗣 «${escapeHtml(transcript)}»`);
+    await processOrderText(msg, from.id, transcript);
     return;
   }
 
@@ -171,13 +197,17 @@ async function handleMessage(msg: TgMessage): Promise<void> {
   if (text.startsWith('/start')) {
     await sendMessage(
       msg.chat.id,
-      `Надішли текст замовлення, наприклад:\n<code>Артанія: 3 каберне, 2 шардоне</code>`
+      `Надішли текст замовлення, наприклад:\n<code>Артанія: 3 каберне, 2 шардоне</code>\n\n` +
+        `Або надішли голосове — розпізнаю на льоту.`
     );
     return;
   }
 
   await sendMessage(msg.chat.id, '⏳ Розпізнаю…');
+  await processOrderText(msg, from.id, text);
+}
 
+async function processOrderText(msg: TgMessage, fromId: number, text: string): Promise<void> {
   let parsed;
   try {
     parsed = await parseOrderText(text);
@@ -261,7 +291,7 @@ async function handleMessage(msg: TgMessage): Promise<void> {
      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
      RETURNING id`,
     [
-      from.id,
+      fromId,
       msg.chat.id,
       msg.message_id,
       partner.id,
