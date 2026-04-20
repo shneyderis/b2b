@@ -17,4 +17,5 @@ export const env = {
   TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
+  TELEGRAM_MINIAPP_URL: process.env.TELEGRAM_MINIAPP_URL || '',
 };

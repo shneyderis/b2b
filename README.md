@@ -76,7 +76,6 @@ function re-exports the Express instance returned by `createApp()` in
 | `TELEGRAM_BOT_TOKEN` | BotFather token (outbound notifications) |
 | `TELEGRAM_MANAGERS_CHAT_ID` | group id where orders are posted |
 | `VITE_MANAGER_TELEGRAM_URL` | https://t.me/… (footer link) |
-| `VITE_MANAGER_WHATSAPP_URL` | https://wa.me/… (footer link) |
 
 ⚠️ **Use the Transaction Pooler for `DATABASE_URL`.** Each serverless
 invocation opens its own PG client; at ~100 partners the free-tier limit

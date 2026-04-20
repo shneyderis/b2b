@@ -2,7 +2,6 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 
 const tgUrl = import.meta.env.VITE_MANAGER_TELEGRAM_URL as string | undefined;
-const waUrl = import.meta.env.VITE_MANAGER_WHATSAPP_URL as string | undefined;
 
 export function Layout() {
   const { role, logout } = useAuth();
@@ -56,29 +55,17 @@ export function Layout() {
         <Outlet />
       </main>
 
-      {role === 'partner' && (tgUrl || waUrl) && (
+      {role === 'partner' && tgUrl && (
         <footer className="bg-white border-t border-neutral-200 sticky bottom-0 no-print">
-          <div className="max-w-3xl mx-auto px-4 py-3 flex gap-2">
-            {tgUrl && (
-              <a
-                href={tgUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 h-12 flex items-center justify-center rounded-lg bg-burgundy-700 text-white font-medium"
-              >
-                Менеджер у Telegram
-              </a>
-            )}
-            {waUrl && (
-              <a
-                href={waUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 h-12 flex items-center justify-center rounded-lg border border-burgundy-700 text-burgundy-700 font-medium"
-              >
-                WhatsApp
-              </a>
-            )}
+          <div className="max-w-3xl mx-auto px-4 py-3">
+            <a
+              href={tgUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="w-full h-12 flex items-center justify-center rounded-lg bg-burgundy-700 text-white font-medium"
+            >
+              Написати менеджеру у Telegram
+            </a>
           </div>
         </footer>
       )}
