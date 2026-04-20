@@ -82,6 +82,18 @@ export function AdminPartners() {
     }
   }
 
+  async function updateLegalName(id: string, legal_name: string | null) {
+    try {
+      const row = await api<AdminPartner>(`/admin/partners/${id}`, {
+        method: 'PUT',
+        body: { legal_name },
+      });
+      setPartners((prev) => prev.map((p) => (p.id === id ? { ...p, legal_name: row.legal_name } : p)));
+    } catch {
+      alert('Не вдалося оновити юридичну особу.');
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -123,6 +135,7 @@ export function AdminPartners() {
               onRestore={() => changeStatus(p.id, 'pending')}
               onDiscount={(n) => updateDiscount(p.id, n)}
               onWarehouse={(wid) => updateWarehouse(p.id, wid)}
+              onLegalName={(value) => updateLegalName(p.id, value)}
               onUserAdded={() => load(tab)}
             />
           ))}
@@ -153,6 +166,7 @@ function PartnerCard({
   onRestore,
   onDiscount,
   onWarehouse,
+  onLegalName,
   onUserAdded,
 }: {
   partner: AdminPartner;
@@ -162,15 +176,28 @@ function PartnerCard({
   onRestore: () => void;
   onDiscount: (n: number) => void;
   onWarehouse: (warehouseId: string) => void;
+  onLegalName: (value: string | null) => void;
   onUserAdded: () => void | Promise<void>;
 }) {
   const [discount, setDiscount] = useState<string>(String(partner.discount_percent));
+  const [legalName, setLegalName] = useState<string>(partner.legal_name ?? '');
   const [open, setOpen] = useState(partner.status === 'pending');
   const [showAddUser, setShowAddUser] = useState(false);
 
   useEffect(() => {
     setDiscount(String(partner.discount_percent));
   }, [partner.discount_percent]);
+
+  useEffect(() => {
+    setLegalName(partner.legal_name ?? '');
+  }, [partner.legal_name]);
+
+  function commitLegalName() {
+    const trimmed = legalName.trim();
+    const next = trimmed || null;
+    if (next === (partner.legal_name ?? null)) return;
+    onLegalName(next);
+  }
 
   function commitDiscount() {
     const n = Number(discount.replace(',', '.'));
@@ -187,6 +214,9 @@ function PartnerCard({
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
           <div className="font-semibold text-burgundy-700">{partner.name}</div>
+          {partner.legal_name && partner.legal_name !== partner.name && (
+            <div className="text-xs text-neutral-700 mt-0.5">{partner.legal_name}</div>
+          )}
           <div className="text-xs text-neutral-500 mt-0.5">
             {partner.city && <>{partner.city} · </>}
             {partner.users.length} користувач(ів) · {partner.addresses.length} адрес
@@ -249,6 +279,20 @@ function PartnerCard({
 
       {open && (
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <label className="flex flex-col gap-1 sm:col-span-2">
+            <span className="text-xs font-medium text-neutral-700">Юридична особа</span>
+            <input
+              className="input"
+              value={legalName}
+              onChange={(e) => setLegalName(e.target.value)}
+              onBlur={commitLegalName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+              }}
+              placeholder="ТОВ «…»"
+              maxLength={255}
+            />
+          </label>
           <div>
             <div className="flex items-center justify-between mb-1">
               <div className="font-medium text-neutral-700">Користувачі</div>
@@ -403,6 +447,7 @@ function CreatePartnerModal({ warehouses, onClose, onCreated }: {
   onCreated: () => void;
 }) {
   const [name, setName] = useState('');
+  const [legalName, setLegalName] = useState('');
   const [city, setCity] = useState('');
   const [discount, setDiscount] = useState('0');
   const [warehouseId, setWarehouseId] = useState<string>(warehouses[0]?.id ?? '');
@@ -427,6 +472,7 @@ function CreatePartnerModal({ warehouses, onClose, onCreated }: {
         method: 'POST',
         body: {
           name: name.trim(),
+          legal_name: legalName.trim() || undefined,
           city: city.trim() || undefined,
           discount_percent: d,
           warehouse_id: warehouseId || undefined,
@@ -455,8 +501,12 @@ function CreatePartnerModal({ warehouses, onClose, onCreated }: {
       >
         <h2 className="font-bold text-burgundy-700">Новий партнер</h2>
         <label className="flex flex-col gap-1">
-          <span className="text-sm text-neutral-600">Назва</span>
+          <span className="text-sm text-neutral-600">Назва (бренд / заклад)</span>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-neutral-600">Юридична особа</span>
+          <input className="input" value={legalName} onChange={(e) => setLegalName(e.target.value)} placeholder="ТОВ «…»" />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-sm text-neutral-600">Місто</span>

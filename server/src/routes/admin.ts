@@ -377,7 +377,7 @@ r.get('/partners', async (req, res) => {
   const { status } = req.query as Record<string, string | undefined>;
   const params: any[] = [];
   let sql = `
-    SELECT p.id, p.name, p.discount_percent, p.status, p.notes, p.created_at,
+    SELECT p.id, p.name, p.legal_name, p.discount_percent, p.status, p.notes, p.created_at,
            p.city, p.warehouse_id, w.name AS warehouse_name,
            COALESCE(u.users, '[]'::jsonb) AS users,
            COALESCE(a.addresses, '[]'::jsonb) AS addresses
@@ -406,6 +406,7 @@ r.get('/partners', async (req, res) => {
 
 const createPartnerSchema = z.object({
   name: z.string().min(1).max(255),
+  legal_name: z.string().max(255).nullable().optional(),
   discount_percent: z.number().min(0).max(100).optional(),
   notes: z.string().max(2000).optional(),
   city: z.string().max(128).nullable().optional(),
@@ -434,9 +435,16 @@ r.post('/partners', async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows: [partner] } = await client.query(
-      `INSERT INTO partners (name, discount_percent, notes, status, warehouse_id, city)
-       VALUES ($1, COALESCE($2, 0), $3, 'approved', $4, $5) RETURNING *`,
-      [p.data.name, p.data.discount_percent ?? null, p.data.notes ?? null, warehouseId, p.data.city ?? null]
+      `INSERT INTO partners (name, legal_name, discount_percent, notes, status, warehouse_id, city)
+       VALUES ($1, $2, COALESCE($3, 0), $4, 'approved', $5, $6) RETURNING *`,
+      [
+        p.data.name,
+        p.data.legal_name ?? null,
+        p.data.discount_percent ?? null,
+        p.data.notes ?? null,
+        warehouseId,
+        p.data.city ?? null,
+      ]
     );
     const hash = await hashPassword(p.data.user.password);
     await client.query(
@@ -456,6 +464,7 @@ r.post('/partners', async (req, res) => {
 
 const updatePartnerSchema = z.object({
   name: z.string().min(1).max(255).optional(),
+  legal_name: z.string().max(255).nullable().optional(),
   discount_percent: z.number().min(0).max(100).optional(),
   notes: z.string().max(2000).nullable().optional(),
   city: z.string().max(128).nullable().optional(),
@@ -465,9 +474,11 @@ const updatePartnerSchema = z.object({
 r.put('/partners/:id', async (req, res) => {
   const p = updatePartnerSchema.safeParse(req.body);
   if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  const hasLegalName = Object.prototype.hasOwnProperty.call(p.data, 'legal_name');
   const row = await one(
     `UPDATE partners SET
        name = COALESCE($2, name),
+       legal_name = CASE WHEN $7::boolean THEN $8 ELSE legal_name END,
        discount_percent = COALESCE($3, discount_percent),
        notes = COALESCE($4, notes),
        warehouse_id = COALESCE($5, warehouse_id),
@@ -480,6 +491,8 @@ r.put('/partners/:id', async (req, res) => {
       p.data.notes ?? null,
       p.data.warehouse_id ?? null,
       p.data.city ?? null,
+      hasLegalName,
+      p.data.legal_name ?? null,
     ]
   );
   if (!row) return res.status(404).json({ error: 'not found' });

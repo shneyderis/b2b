@@ -122,6 +122,7 @@ export interface AdminPartnerUser {
 export interface AdminPartner {
   id: string;
   name: string;
+  legal_name: string | null;
   discount_percent: string | number;
   status: PartnerStatus;
   notes: string | null;

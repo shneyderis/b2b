@@ -45,6 +45,7 @@ type OrderRow = {
   created_at: string;
   updated_at: string;
   partner_name: string;
+  partner_legal_name: string | null;
   user_contact: string | null;
   user_phone: string | null;
   address_label: string;
@@ -57,7 +58,7 @@ export async function streamOrderPdf(orderId: string, res: Response): Promise<vo
   const order = await one<OrderRow>(
     `SELECT o.id, o.order_number, o.status, o.comment, o.total_amount,
             o.created_at, o.updated_at,
-            p.name AS partner_name,
+            p.name AS partner_name, p.legal_name AS partner_legal_name,
             u.contact_name AS user_contact, u.phone AS user_phone,
             da.label AS address_label, da.address AS address_text
        FROM orders o
@@ -100,7 +101,10 @@ export async function streamOrderPdf(orderId: string, res: Response): Promise<vo
   useFont(doc, 'bold');
   doc.fontSize(12).text('Партнер');
   useFont(doc, 'reg');
-  doc.fontSize(10).text(order.partner_name);
+  doc.fontSize(10).text(order.partner_legal_name || order.partner_name);
+  if (order.partner_legal_name && order.partner_legal_name !== order.partner_name) {
+    doc.fillColor('#888').text(order.partner_name).fillColor('#000');
+  }
   if (order.user_contact) doc.text(`Контакт: ${order.user_contact}`);
   if (order.user_phone) doc.text(`Телефон: ${order.user_phone}`);
   doc.moveDown(0.5);
