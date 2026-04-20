@@ -141,6 +141,13 @@ export async function handleTelegramUpdate(update: TgUpdate): Promise<void> {
 async function handleMessage(msg: TgMessage): Promise<void> {
   const from = msg.from;
   if (!from) return;
+
+  const text = (msg.text ?? '').trim();
+  if (text.startsWith('/id')) {
+    await sendMessage(msg.chat.id, `Твій Telegram ID: <code>${from.id}</code>`);
+    return;
+  }
+
   if (!isAdminId(from.id)) {
     await greetNonAdmin(msg.chat.id, from.id);
     return;
@@ -151,17 +158,12 @@ async function handleMessage(msg: TgMessage): Promise<void> {
     return;
   }
 
-  const text = (msg.text ?? '').trim();
   if (!text) return;
   if (text.startsWith('/start')) {
     await sendMessage(
       msg.chat.id,
       `Надішли текст замовлення, наприклад:\n<code>Артанія: 3 каберне, 2 шардоне</code>`
     );
-    return;
-  }
-  if (text.startsWith('/id')) {
-    await sendMessage(msg.chat.id, `Твій Telegram ID: <code>${from.id}</code>`);
     return;
   }
 
