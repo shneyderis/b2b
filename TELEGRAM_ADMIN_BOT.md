@@ -16,6 +16,9 @@ Partner selection happens by fuzzy-matching the name the admin types against
    - `TELEGRAM_WEBHOOK_SECRET` — any random string; Telegram will send it
      back in the `X-Telegram-Bot-Api-Secret-Token` header, so bogus POSTs
      to `/api/telegram/webhook` are rejected.
+   - `ANTHROPIC_API_KEY` — Claude Haiku parses the freeform order text.
+   - `GROQ_API_KEY` — *optional*, enables voice-message transcription via
+     Whisper. Without it, voice messages get an error reply.
 3. Deploy, then register the webhook once locally:
    ```sh
    WEBHOOK_URL=https://your.vercel.app/api/telegram/webhook \
@@ -41,5 +44,20 @@ admin if there's no match.
 
 ## Voice messages
 
-Not wired up yet — the bot replies with a stub. See the follow-up PR for
-the Groq Whisper pipeline.
+Send a voice message to the bot — it'll:
+
+1. Reply with `🎙 Розпізнаю голос…`.
+2. Download the .ogg from Telegram, send to Groq Whisper
+   (`whisper-large-v3`), get the transcript.
+3. Echo the transcript back as `🗣 «…»` so you can sanity-check it.
+4. Pipe the same transcript through the Anthropic order parser → preview
+   with Підтвердити / Скасувати, identical to the text path.
+
+Voice path needs `GROQ_API_KEY` set; without it the bot replies with
+`❌ Не вдалося розпізнати голос: voice_not_configured`. Get a key at
+<https://console.groq.com/keys> — Whisper there is roughly $0.03/hour of
+audio.
+
+Telegram voice clips are usually well under 1 MB and Whisper transcribes
+them in ~1–2s, leaving plenty of room inside the Vercel 10s function
+budget alongside the LLM parse (~5s).
