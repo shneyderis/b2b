@@ -3,8 +3,10 @@ import { query } from './db.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const MODEL = 'whisper-large-v3';
-// Whisper's prompt window is ~224 tokens. Stay well under via char cap.
-const PROMPT_MAX_CHARS = 800;
+// Groq's whisper-large-v3 caps the prompt at 896 UTF-8 bytes. Each
+// Cyrillic char is 2 bytes, so a length-cap in JS code units would
+// overshoot; cap by bytes with a safety margin.
+const PROMPT_MAX_BYTES = 850;
 const VOCAB_TTL_MS = 60_000;
 
 let vocabCache: { at: number; prompt: string } | null = null;
@@ -14,6 +16,19 @@ function fail(status: number, code: string, detail?: string): never {
   err.status = status;
   if (detail) err.detail = detail;
   throw err;
+}
+
+function capByBytes(s: string, maxBytes: number): string {
+  if (Buffer.byteLength(s, 'utf8') <= maxBytes) return s;
+  // Trim coarsely, then 1-char fine-tuning. Encoder.encode could be exact
+  // but Buffer.byteLength is good enough here.
+  let result = s;
+  while (Buffer.byteLength(result, 'utf8') > maxBytes - 1 && result.length > 0) {
+    const overshoot = Buffer.byteLength(result, 'utf8') - (maxBytes - 1);
+    const cut = Math.max(1, Math.ceil(overshoot / 2));
+    result = result.slice(0, -cut);
+  }
+  return result + '…';
 }
 
 export async function buildVoiceVocabPrompt(): Promise<string> {
@@ -43,8 +58,10 @@ export async function buildVoiceVocabPrompt(): Promise<string> {
   }
   for (const w of wines) add(w.name);
 
-  let prompt = `Каталог вин винарні Beykush та назви партнерів-закладів: ${terms.join(', ')}.`;
-  if (prompt.length > PROMPT_MAX_CHARS) prompt = prompt.slice(0, PROMPT_MAX_CHARS - 1) + '…';
+  const prompt = capByBytes(
+    `Каталог вин Beykush і назви партнерів: ${terms.join(', ')}.`,
+    PROMPT_MAX_BYTES
+  );
 
   vocabCache = { at: now, prompt };
   return prompt;
@@ -65,7 +82,7 @@ export async function transcribeVoice(buffer: Buffer, opts: TranscribeOptions = 
   form.append('model', MODEL);
   form.append('response_format', 'json');
   if (opts.language) form.append('language', opts.language);
-  if (opts.prompt) form.append('prompt', opts.prompt.slice(0, PROMPT_MAX_CHARS));
+  if (opts.prompt) form.append('prompt', capByBytes(opts.prompt, PROMPT_MAX_BYTES));
 
   let resp: Response;
   try {
