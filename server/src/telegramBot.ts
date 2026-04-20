@@ -2,7 +2,7 @@ import { env } from './env.js';
 import { one, query } from './db.js';
 import { parseOrderText } from './orderParser.js';
 import { createAdminOrder, AdminOrderError } from './adminOrders.js';
-import { transcribeVoice } from './voiceTranscriber.js';
+import { transcribeVoice, buildVoiceVocabPrompt } from './voiceTranscriber.js';
 
 type TgUser = { id: number; first_name?: string; username?: string };
 type TgChat = { id: number };
@@ -177,8 +177,11 @@ async function handleMessage(msg: TgMessage): Promise<void> {
     await sendMessage(msg.chat.id, '🎙 Розпізнаю голос…');
     let transcript: string;
     try {
-      const buf = await downloadTelegramFile(msg.voice.file_id);
-      transcript = await transcribeVoice(buf);
+      const [buf, vocab] = await Promise.all([
+        downloadTelegramFile(msg.voice.file_id),
+        buildVoiceVocabPrompt().catch(() => ''),
+      ]);
+      transcript = await transcribeVoice(buf, { language: 'uk', prompt: vocab || undefined });
     } catch (e: any) {
       const detail = e?.detail || e?.message || 'помилка транскрипції';
       await sendMessage(msg.chat.id, `❌ Не вдалося розпізнати голос: ${escapeHtml(String(detail))}`);
