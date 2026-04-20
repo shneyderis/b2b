@@ -50,6 +50,7 @@ function escapeHtml(s: string): string {
 type PartnerRow = {
   id: string;
   name: string;
+  legal_name: string | null;
   city: string | null;
   discount_percent: string;
   default_address_id: string | null;
@@ -59,13 +60,16 @@ async function findPartnersByHint(hint: string): Promise<PartnerRow[]> {
   const normalized = hint.toLowerCase().replace(/[«»"'`]/g, '').trim();
   if (!normalized) return [];
   return await query<PartnerRow>(
-    `SELECT p.id, p.name, p.city, p.discount_percent,
+    `SELECT p.id, p.name, p.legal_name, p.city, p.discount_percent,
             (SELECT id FROM delivery_addresses da
               WHERE da.partner_id = p.id
               ORDER BY is_default DESC, created_at LIMIT 1) AS default_address_id
        FROM partners p
       WHERE p.status = 'approved'
-        AND lower(p.name) ILIKE $1
+        AND (
+          lower(p.name) ILIKE $1
+          OR (p.legal_name IS NOT NULL AND lower(p.legal_name) ILIKE $1)
+        )
       ORDER BY length(p.name), p.name
       LIMIT 6`,
     [`%${normalized}%`]
@@ -119,10 +123,15 @@ function renderPreview(
   total: number
 ) {
   const list = items.map((i) => `• ${escapeHtml(i.name)} × ${i.quantity} — ${i.price} ₴`).join('\n');
+  const legalLine =
+    partner.legal_name && partner.legal_name !== partner.name
+      ? `\nЮр. особа: ${escapeHtml(partner.legal_name)}`
+      : '';
   return (
     `<b>🍷 Нове замовлення</b>\n` +
     `Партнер: <b>${escapeHtml(partner.name)}</b>` +
     (partner.city ? ` (${escapeHtml(partner.city)})` : '') +
+    legalLine +
     `\n\n${list}\n\n` +
     `Разом: <b>${total} ₴</b>\n` +
     `Натисни «Підтвердити» щоб створити замовлення.`
@@ -200,7 +209,12 @@ async function handleMessage(msg: TgMessage): Promise<void> {
   }
   if (candidates.length > 1) {
     const list = candidates
-      .map((p, i) => `${i + 1}. ${escapeHtml(p.name)}${p.city ? ` (${escapeHtml(p.city)})` : ''}`)
+      .map((p, i) => {
+        const legal =
+          p.legal_name && p.legal_name !== p.name ? ` / ${escapeHtml(p.legal_name)}` : '';
+        const city = p.city ? ` (${escapeHtml(p.city)})` : '';
+        return `${i + 1}. ${escapeHtml(p.name)}${legal}${city}`;
+      })
       .join('\n');
     await sendMessage(
       msg.chat.id,
