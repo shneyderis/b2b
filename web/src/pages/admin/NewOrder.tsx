@@ -20,10 +20,10 @@ export function AdminNewOrder() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [parseOpen, setParseOpen] = useState(false);
   const [parseText, setParseText] = useState('');
   const [parseBusy, setParseBusy] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [parseInfo, setParseInfo] = useState<string[] | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -123,20 +123,49 @@ export function AdminNewOrder() {
     }
   }
 
+  function matchPartner(hint: string): AdminPartner[] {
+    const normalized = hint.toLowerCase().replace(/[«»"'`]/g, '').trim();
+    if (!normalized) return [];
+    return partners
+      .filter((p) =>
+        p.name.toLowerCase().includes(normalized) ||
+        (p.legal_name && p.legal_name.toLowerCase().includes(normalized))
+      )
+      .sort((a, b) => a.name.length - b.name.length);
+  }
+
   async function onParse() {
     setParseError(null);
+    setParseInfo(null);
     const text = parseText.trim();
     if (!text) {
-      setParseError('Вставте текст замовлення.');
+      setParseError('Введіть або вставте текст замовлення.');
       return;
     }
     setParseBusy(true);
     try {
-      const res = await api<{ items: { wine_id: string; quantity: number }[] }>(
+      const res = await api<{ partner_hint: string | null; items: { wine_id: string; quantity: number }[] }>(
         '/admin/orders/parse',
         { method: 'POST', body: { text } }
       );
-      const knownIds = new Set(wines.filter((w) => w.is_active && w.stock_quantity > 0).map((w) => w.id));
+
+      const messages: string[] = [];
+
+      if (res.partner_hint) {
+        const matches = matchPartner(res.partner_hint);
+        if (matches.length === 1) {
+          onPartnerChange(matches[0].id);
+          messages.push(`Партнер: ${matches[0].name}.`);
+        } else if (matches.length > 1) {
+          messages.push(`Знайдено кілька партнерів для «${res.partner_hint}» — оберіть вручну.`);
+        } else {
+          messages.push(`Партнера «${res.partner_hint}» не знайдено — оберіть вручну.`);
+        }
+      } else {
+        messages.push('Партнер у тексті не вказаний — оберіть вручну.');
+      }
+
+      const knownIds = new Set(availableWines.map((w) => w.id));
       const next: Qty = {};
       for (const it of res.items) {
         if (!knownIds.has(it.wine_id)) continue;
@@ -144,12 +173,12 @@ export function AdminNewOrder() {
       }
       if (Object.keys(next).length === 0) {
         setParseError('Не вдалося розпізнати жодної позиції з каталогу.');
-        setParseBusy(false);
         return;
       }
       setQty(next);
-      setParseOpen(false);
-      setParseText('');
+      const total = Object.values(next).reduce((s, n) => s + n, 0);
+      messages.push(`Додано ${Object.keys(next).length} позицій, ${total} шт.`);
+      setParseInfo(messages);
     } catch (err) {
       if (err instanceof ApiError && err.status === 503) {
         setParseError('LLM не налаштовано на сервері.');
@@ -172,6 +201,63 @@ export function AdminNewOrder() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-burgundy-700">Нове замовлення за партнера</h1>
         <Link to="/admin/orders" className="text-burgundy-700 text-sm">Скасувати</Link>
+      </div>
+
+      <section className="card">
+        <h2 className="font-semibold text-burgundy-700 mb-1">Розпізнати з тексту</h2>
+        <p className="text-sm text-neutral-600 mb-3">
+          Вставте SMS, лист або просто надиктуйте у будь-якій формі — LLM підставить партнера й
+          позиції у форму нижче. Потім можна доправити руками.
+        </p>
+        <textarea
+          className="min-h-[110px] w-full p-3 rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
+          value={parseText}
+          onChange={(e) => setParseText(e.target.value)}
+          maxLength={10000}
+          disabled={parseBusy}
+          placeholder="Напр.: «Артанія: 3 каберне, 2 шардоне, будь ласка»"
+        />
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onParse}
+            disabled={parseBusy || !parseText.trim()}
+            className="btn-primary px-4"
+          >
+            {parseBusy ? 'Обробляємо…' : 'Розпізнати'}
+          </button>
+          {parseText && !parseBusy && (
+            <button
+              type="button"
+              onClick={() => {
+                setParseText('');
+                setParseError(null);
+                setParseInfo(null);
+              }}
+              className="h-10 px-3 rounded-lg text-sm text-neutral-600 hover:bg-neutral-100"
+            >
+              Очистити
+            </button>
+          )}
+        </div>
+        {parseError && (
+          <div className="mt-3 text-sm text-burgundy-700 bg-burgundy-50 border border-burgundy-100 rounded-lg p-2">
+            {parseError}
+          </div>
+        )}
+        {parseInfo && parseInfo.length > 0 && (
+          <div className="mt-3 text-sm text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg p-2">
+            {parseInfo.map((m, i) => (
+              <div key={i}>{m}</div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className="flex items-center gap-3 text-sm text-neutral-500">
+        <div className="flex-1 h-px bg-neutral-200" />
+        <span>або заповніть вручну</span>
+        <div className="flex-1 h-px bg-neutral-200" />
       </div>
 
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
@@ -221,26 +307,14 @@ export function AdminNewOrder() {
         </section>
 
         <section className="card">
-          <div className="flex items-center justify-between mb-2 gap-3">
-            <h2 className="font-semibold text-burgundy-700">
-              Позиції
-              {discount > 0 && (
-                <span className="ml-2 text-xs font-normal text-neutral-500">
-                  · ціни зі знижкою {discount}%
-                </span>
-              )}
-            </h2>
-            <button
-              type="button"
-              onClick={() => {
-                setParseError(null);
-                setParseOpen(true);
-              }}
-              className="h-9 px-3 rounded-lg text-sm text-burgundy-700 border border-burgundy-700 hover:bg-burgundy-50"
-            >
-              Розпізнати з тексту
-            </button>
-          </div>
+          <h2 className="font-semibold text-burgundy-700 mb-2">
+            Позиції
+            {discount > 0 && (
+              <span className="ml-2 text-xs font-normal text-neutral-500">
+                · ціни зі знижкою {discount}%
+              </span>
+            )}
+          </h2>
           <ul className="divide-y divide-neutral-200">
             {availableWines.map((w) => {
               const value = qty[w.id] ?? 0;
@@ -306,61 +380,6 @@ export function AdminNewOrder() {
         </div>
         {submitError && <div className="card text-burgundy-700 text-sm">{submitError}</div>}
       </form>
-
-      {parseOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={() => !parseBusy && setParseOpen(false)}
-        >
-          <div
-            className="bg-white rounded-xl w-full max-w-xl p-4 flex flex-col gap-3"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-burgundy-700">Розпізнати замовлення з тексту</h3>
-              <button
-                type="button"
-                onClick={() => !parseBusy && setParseOpen(false)}
-                className="text-neutral-500 hover:text-neutral-800"
-                aria-label="Закрити"
-              >
-                ✕
-              </button>
-            </div>
-            <p className="text-sm text-neutral-600">
-              Вставте довільний текст (SMS, лист, повідомлення). LLM поверне позиції,
-              які будуть підставлені у форму; партнера й адресу треба обрати вручну.
-            </p>
-            <textarea
-              className="min-h-[180px] w-full p-3 rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
-              value={parseText}
-              onChange={(e) => setParseText(e.target.value)}
-              maxLength={10000}
-              disabled={parseBusy}
-              placeholder="Наприклад: «Добрий день, додайте до замовлення 6 пляшок Каберне 2022 і 3 Шардоне»"
-            />
-            {parseError && <div className="text-sm text-burgundy-700">{parseError}</div>}
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setParseOpen(false)}
-                disabled={parseBusy}
-                className="h-10 px-3 rounded-lg text-sm text-burgundy-700 hover:bg-burgundy-100"
-              >
-                Скасувати
-              </button>
-              <button
-                type="button"
-                onClick={onParse}
-                disabled={parseBusy}
-                className="btn-primary px-4"
-              >
-                {parseBusy ? 'Обробляємо…' : 'Розпізнати'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
