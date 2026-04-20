@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { one, pool, query } from '../db.js';
 import { hashPassword, signToken, verifyPassword } from '../auth.js';
 import { env } from '../env.js';
+import { notifyManagersNewPartner } from '../telegram.js';
 
 const r = Router();
 
@@ -293,6 +294,9 @@ r.post('/telegram/onboard', async (req, res) => {
           role: user.role,
           partner_status: 'pending',
         };
+        notifyManagersNewPartner(partner.id).catch((e) =>
+          console.error('[auth] notifyManagersNewPartner failed', e)
+        );
       } catch (e) {
         await client.query('ROLLBACK');
         throw e;

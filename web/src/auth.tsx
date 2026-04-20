@@ -76,6 +76,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, [token]);
 
+  useEffect(() => {
+    if (tgAuthStatus !== 'not_approved') return;
+    const initData = getTelegramInitData();
+    if (!initData) return;
+    const handle = setInterval(async () => {
+      try {
+        const res = await api<{ token: string; role: Role }>('/auth/telegram', {
+          body: { initData },
+        });
+        setAuth(res.token, res.role);
+        setToken(res.token);
+        setRole(res.role);
+        setTgAuthStatus('idle');
+      } catch {
+        // still pending approval — keep polling
+      }
+    }, 10_000);
+    return () => clearInterval(handle);
+  }, [tgAuthStatus]);
+
   const value = useMemo<AuthContextValue>(() => ({
     token,
     role,

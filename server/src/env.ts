@@ -6,6 +6,10 @@ function required(name: string): string {
   return v;
 }
 
+if (process.env.NODE_ENV === 'production' && !process.env.TELEGRAM_WEBHOOK_SECRET) {
+  throw new Error('TELEGRAM_WEBHOOK_SECRET is required in production');
+}
+
 export const env = {
   DATABASE_URL: required('DATABASE_URL'),
   DIRECT_DATABASE_URL: process.env.DIRECT_DATABASE_URL || '',
@@ -18,4 +22,5 @@ export const env = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
   TELEGRAM_MINIAPP_URL: process.env.TELEGRAM_MINIAPP_URL || '',
+  CRON_SECRET: process.env.CRON_SECRET || '',
 };

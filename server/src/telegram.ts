@@ -62,6 +62,37 @@ export async function notifyManagersNewOrder(orderId: string): Promise<void> {
   await sendTelegram(env.TELEGRAM_MANAGERS_CHAT_ID, text);
 }
 
+export async function notifyManagersNewPartner(partnerId: string): Promise<void> {
+  if (!env.TELEGRAM_MANAGERS_CHAT_ID) return;
+  const p = await one<{
+    name: string;
+    legal_name: string | null;
+    city: string | null;
+    contact_name: string | null;
+    phone: string | null;
+  }>(
+    `SELECT p.name, p.legal_name, p.city,
+            u.contact_name, u.phone
+       FROM partners p
+       JOIN users u ON u.partner_id = p.id
+      WHERE p.id = $1
+      ORDER BY u.created_at
+      LIMIT 1`,
+    [partnerId]
+  );
+  if (!p) return;
+  const text =
+    `<b>🆕 Заявка на партнерство</b>\n` +
+    `${escapeHtml(p.name)}` +
+    (p.legal_name && p.legal_name !== p.name ? ` / ${escapeHtml(p.legal_name)}` : '') +
+    (p.city ? ` (${escapeHtml(p.city)})` : '') +
+    `\n` +
+    (p.contact_name ? `Контакт: ${escapeHtml(p.contact_name)}\n` : '') +
+    (p.phone ? `Телефон: ${escapeHtml(p.phone)}\n` : '') +
+    `\nВідкрий /admin/partners щоб схвалити.`;
+  await sendTelegram(env.TELEGRAM_MANAGERS_CHAT_ID, text);
+}
+
 export async function notifyPartnerStatusChange(orderId: string, status: string): Promise<void> {
   const row = await one<{
     order_number: number;
