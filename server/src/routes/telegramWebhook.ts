@@ -4,17 +4,21 @@ import { handleTelegramUpdate, type TgUpdate } from '../telegramBot.js';
 
 const r = Router();
 
-r.post('/webhook', (req, res) => {
+r.post('/webhook', async (req, res) => {
   if (env.TELEGRAM_WEBHOOK_SECRET) {
     const got = req.header('x-telegram-bot-api-secret-token') ?? '';
     if (got !== env.TELEGRAM_WEBHOOK_SECRET) {
       return res.status(401).json({ error: 'bad_secret' });
     }
+  } else {
+    console.warn('[tgBot] TELEGRAM_WEBHOOK_SECRET is not set — webhook is unauthenticated');
   }
-  // Acknowledge to Telegram immediately; handler runs async. If it
-  // throws, we've already returned 200 — Telegram won't retry-bomb us.
+  try {
+    await handleTelegramUpdate(req.body as TgUpdate);
+  } catch (e) {
+    console.error('[tgBot] handler threw', e);
+  }
   res.json({ ok: true });
-  void handleTelegramUpdate(req.body as TgUpdate);
 });
 
 export default r;

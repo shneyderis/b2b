@@ -142,10 +142,7 @@ async function handleMessage(msg: TgMessage): Promise<void> {
   const from = msg.from;
   if (!from) return;
   if (!isAdminId(from.id)) {
-    await sendMessage(
-      msg.chat.id,
-      `⛔ Доступ лише для адмінів. Твій Telegram ID: <code>${from.id}</code>`
-    );
+    await greetNonAdmin(msg.chat.id, from.id);
     return;
   }
 
@@ -269,6 +266,35 @@ async function handleMessage(msg: TgMessage): Promise<void> {
       ],
     },
   });
+}
+
+async function greetNonAdmin(chatId: number, tgUserId: number): Promise<void> {
+  const partner = await one<{ partner_name: string; partner_status: string }>(
+    `SELECT p.name AS partner_name, p.status AS partner_status
+       FROM users u JOIN partners p ON p.id = u.partner_id
+      WHERE u.telegram_id = $1::bigint AND u.role = 'partner'
+      LIMIT 1`,
+    [tgUserId]
+  );
+  if (partner && partner.partner_status === 'approved') {
+    await sendMessage(
+      chatId,
+      `Вітаю, <b>${escapeHtml(partner.partner_name)}</b>! 🍷\n\n` +
+        `Щоб зробити замовлення, відкрий каталог — синя кнопка <b>«Відкрити каталог»</b> ліворуч від поля вводу.`
+    );
+    return;
+  }
+  if (partner && partner.partner_status !== 'approved') {
+    await sendMessage(
+      chatId,
+      `Заявка на партнерство ще на розгляді. Після схвалення менеджером відкрий Mini App.`
+    );
+    return;
+  }
+  await sendMessage(
+    chatId,
+    `⛔ Доступ лише для адмінів. Твій Telegram ID: <code>${tgUserId}</code>`
+  );
 }
 
 async function handleCallback(cb: TgCallbackQuery): Promise<void> {
