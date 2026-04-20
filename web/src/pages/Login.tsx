@@ -1,15 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { ApiError } from '../api';
 
+const botUrl = import.meta.env.VITE_TELEGRAM_BOT_URL as string | undefined;
+
 export function Login() {
-  const { login, isTelegram, tgAuthStatus, token } = useAuth();
+  const { login, isTelegram, token } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
 
   useEffect(() => {
     if (token) navigate('/', { replace: true });
@@ -46,44 +49,69 @@ export function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm card">
-        <h1 className="text-2xl font-bold text-burgundy-700 mb-4">Вхід</h1>
-        {tgAuthStatus === 'error' && (
-          <div className="mb-3 text-sm text-burgundy-700 bg-burgundy-50 border border-burgundy-100 rounded-lg p-2">
-            Не вдалося увійти через Telegram. Скористайтеся email та паролем.
+        <h1 className="text-2xl font-bold text-burgundy-700 mb-1">Вхід для партнерів</h1>
+        <p className="text-sm text-neutral-600 mb-4">
+          Відкрийте каталог у Telegram — там усе робиться парою дотиків.
+        </p>
+
+        {botUrl ? (
+          <a
+            href={botUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="w-full h-12 flex items-center justify-center gap-2 rounded-lg bg-burgundy-700 text-white font-medium"
+          >
+            Відкрити в Telegram
+          </a>
+        ) : (
+          <div className="w-full rounded-lg border border-burgundy-100 bg-burgundy-50 text-sm text-burgundy-700 p-3">
+            Для входу відкрийте нашого Telegram-бота — посилання отримаєте в менеджера.
           </div>
         )}
-        <form onSubmit={onSubmit} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-sm text-neutral-600">Email</span>
-            <input
-              type="email"
-              autoComplete="email"
-              className="input"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-sm text-neutral-600">Пароль</span>
-            <input
-              type="password"
-              autoComplete="current-password"
-              className="input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </label>
-          {error && <div className="text-sm text-burgundy-700 bg-burgundy-50 border border-burgundy-100 rounded-lg p-2">{error}</div>}
-          <button type="submit" className="btn-primary" disabled={busy}>
-            {busy ? 'Вхід…' : 'Увійти'}
+
+        {!showEmailForm ? (
+          <button
+            type="button"
+            onClick={() => setShowEmailForm(true)}
+            className="mt-4 w-full text-sm text-neutral-600 hover:text-burgundy-700"
+          >
+            Маєте email та пароль? Увійти →
           </button>
-        </form>
-        <div className="mt-4 text-sm text-center text-neutral-600">
-          Ще не маєте акаунту?{' '}
-          <Link to="/register" className="text-burgundy-700 font-medium">Реєстрація</Link>
-        </div>
+        ) : (
+          <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-neutral-600">Email</span>
+              <input
+                type="email"
+                autoComplete="email"
+                className="input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoFocus
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-neutral-600">Пароль</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                className="input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </label>
+            {error && (
+              <div className="text-sm text-burgundy-700 bg-burgundy-50 border border-burgundy-100 rounded-lg p-2">
+                {error}
+              </div>
+            )}
+            <button type="submit" className="btn-primary" disabled={busy}>
+              {busy ? 'Вхід…' : 'Увійти'}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
