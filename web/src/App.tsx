@@ -17,6 +17,7 @@ import { AdminOrderDetail } from './pages/admin/OrderDetail';
 import { AdminWines } from './pages/admin/Wines';
 import { AdminPartners } from './pages/admin/Partners';
 import { AdminWarehouses } from './pages/admin/Warehouses';
+import { AdminSettings } from './pages/admin/Settings';
 import { WarehouseOrders } from './pages/warehouse/Orders';
 import { WarehouseOrderDetail } from './pages/warehouse/OrderDetail';
 
@@ -131,6 +132,14 @@ export function App() {
               element={
                 <ProtectedRoute role="admin">
                   <AdminWarehouses />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/settings"
+              element={
+                <ProtectedRoute role="admin">
+                  <AdminSettings />
                 </ProtectedRoute>
               }
             />
