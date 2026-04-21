@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { one, pool, query } from '../db.js';
 import { hashPassword, signToken, verifyPassword } from '../auth.js';
 import { env } from '../env.js';
+import { notifyManagersNewPartner } from '../telegram.js';
 
 const r = Router();
 
@@ -179,7 +180,10 @@ r.post('/telegram', async (req, res) => {
   }>(
     `SELECT u.id, u.partner_id, u.warehouse_id, u.role, p.status AS partner_status
        FROM users u LEFT JOIN partners p ON p.id = u.partner_id
-      WHERE u.telegram_id = $1::bigint`,
+      WHERE u.telegram_id = $1::bigint
+      ORDER BY CASE u.role WHEN 'admin' THEN 0 WHEN 'warehouse' THEN 1 ELSE 2 END,
+               u.created_at
+      LIMIT 1`,
     [tgId]
   );
 
@@ -290,6 +294,9 @@ r.post('/telegram/onboard', async (req, res) => {
           role: user.role,
           partner_status: 'pending',
         };
+        notifyManagersNewPartner(partner.id).catch((e) =>
+          console.error('[auth] notifyManagersNewPartner failed', e)
+        );
       } catch (e) {
         await client.query('ROLLBACK');
         throw e;

@@ -9,5 +9,8 @@
     "api/index.ts": {
       "includeFiles": "server/**"
     }
-  }
+  },
+  "crons": [
+    { "path": "/api/cron/cleanup", "schedule": "0 3 * * *" }
+  ]
 }

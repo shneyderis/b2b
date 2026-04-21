@@ -44,6 +44,11 @@ export function OrderForm({ orderId, initial, submitLabel }: Props) {
   });
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const isCreate = !orderId && !initial;
+  const [parseText, setParseText] = useState('');
+  const [parseBusy, setParseBusy] = useState(false);
+  const [parseInfo, setParseInfo] = useState<string | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -94,6 +99,45 @@ export function OrderForm({ orderId, initial, submitLabel }: Props) {
     });
   }
 
+  async function onParse() {
+    setParseError(null);
+    setParseInfo(null);
+    const text = parseText.trim();
+    if (!text) {
+      setParseError('Введіть або вставте текст замовлення.');
+      return;
+    }
+    setParseBusy(true);
+    try {
+      const res = await api<{ items: { wine_id: string; quantity: number }[] }>(
+        '/orders/parse',
+        { method: 'POST', body: { text } }
+      );
+      const knownIds = new Set(wines.map((w) => w.id));
+      const next: Qty = {};
+      let recognized = 0;
+      for (const it of res.items) {
+        if (!knownIds.has(it.wine_id) || it.quantity <= 0) continue;
+        next[it.wine_id] = Math.floor(it.quantity);
+        recognized++;
+      }
+      if (recognized === 0) {
+        setParseError('Жодної позиції не впізнано. Спробуйте іншими словами або заповніть вручну.');
+        return;
+      }
+      setQty(next);
+      setParseInfo(`Розпізнано позицій: ${recognized}. Перевірте кількості нижче.`);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setParseError('Не вдалося розпізнати. Заповніть вручну.');
+      } else {
+        setParseError('Немає зв’язку з сервером.');
+      }
+    } finally {
+      setParseBusy(false);
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitError(null);
@@ -135,6 +179,34 @@ export function OrderForm({ orderId, initial, submitLabel }: Props) {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      {isCreate && (
+        <section className="card">
+          <h2 className="font-semibold text-burgundy-700 mb-2">Вставити текст замовлення</h2>
+          <p className="text-xs text-neutral-500 mb-2">
+            Напр., «3 каберне, 2 шардоне». Нижче все одно можна відкоригувати кількості вручну.
+          </p>
+          <textarea
+            className="min-h-[96px] w-full p-3 rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
+            value={parseText}
+            onChange={(e) => setParseText(e.target.value)}
+            placeholder="3 каберне, 2 шардоне"
+            maxLength={10000}
+          />
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <button
+              type="button"
+              onClick={onParse}
+              disabled={parseBusy || !parseText.trim()}
+              className="btn-secondary"
+            >
+              {parseBusy ? 'Розпізнаю…' : 'Розпізнати'}
+            </button>
+            {parseInfo && <div className="text-xs text-neutral-600">{parseInfo}</div>}
+            {parseError && <div className="text-xs text-burgundy-700">{parseError}</div>}
+          </div>
+        </section>
+      )}
+
       <section className="card">
         <h2 className="font-semibold text-burgundy-700 mb-2">Адреса доставки</h2>
         {addresses.length === 0 ? (

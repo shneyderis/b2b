@@ -4,6 +4,7 @@ import { one, pool, query } from '../db.js';
 import { requireAuth, requirePartner } from '../auth.js';
 import { streamOrderPdf } from '../pdf.js';
 import { notifyManagersNewOrder } from '../telegram.js';
+import { parseOrderText } from '../orderParser.js';
 
 const r = Router();
 r.use(requireAuth, requirePartner);
@@ -56,6 +57,23 @@ r.get('/', async (req, res) => {
   }
   sql += ` ORDER BY o.created_at DESC`;
   res.json(await query(sql, params));
+});
+
+const parseSchema = z.object({ text: z.string().min(1).max(10000) });
+
+r.post('/parse', async (req, res) => {
+  const p = parseSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  try {
+    const result = await parseOrderText(p.data.text);
+    res.json({ items: result.items });
+  } catch (e: any) {
+    const status = typeof e?.status === 'number' ? e.status : 500;
+    res.status(status).json({
+      error: e?.message ?? 'parse_failed',
+      detail: e?.detail ?? null,
+    });
+  }
 });
 
 r.get('/:id', async (req, res) => {
