@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { one, pool, query } from '../db.js';
 import { hashPassword, signToken, verifyPassword } from '../auth.js';
 import { env } from '../env.js';
-import { notifyManagersNewPartner } from '../telegram.js';
+import { notifyManagersNewPartner, notifyPasswordReset } from '../telegram.js';
 
 const r = Router();
 
@@ -320,6 +320,95 @@ r.post('/telegram/onboard', async (req, res) => {
     role: row.role,
   });
   res.json({ token, role: row.role });
+});
+
+/* -------------------- self-service password reset --------------------- */
+
+const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function buildResetUrl(token: string): string | null {
+  const base = env.TELEGRAM_MINIAPP_URL?.trim();
+  if (!base) return null;
+  return `${base.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
+}
+
+const forgotSchema = z.object({ email: z.string().email() });
+
+r.post('/forgot-password', async (req, res) => {
+  const parsed = forgotSchema.safeParse(req.body);
+  // Always return the same response shape, regardless of whether the
+  // email exists, whether it has a telegram link, or whether we managed
+  // to send a message. This prevents account-enumeration via this route.
+  if (!parsed.success) return res.json({ ok: true });
+
+  const user = await one<{ id: string; email: string; telegram_id: string | null }>(
+    `SELECT id, email, telegram_id FROM users WHERE lower(email) = lower($1)`,
+    [parsed.data.email]
+  );
+  if (!user || !user.telegram_id) return res.json({ ok: true });
+
+  const token = crypto.randomBytes(32).toString('base64url');
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+  await query(
+    `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+     VALUES ($1, $2, $3)`,
+    [user.id, hashToken(token), expiresAt]
+  );
+
+  const url = buildResetUrl(token);
+  if (url) {
+    notifyPasswordReset(user.telegram_id, url, user.email).catch((e) =>
+      console.error('[auth] notifyPasswordReset failed', e)
+    );
+  }
+  res.json({ ok: true });
+});
+
+const resetSchema = z.object({
+  token: z.string().min(1).max(200),
+  password: z.string().min(6).max(200),
+});
+
+r.post('/reset-password', async (req, res) => {
+  const parsed = resetSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid input' });
+
+  const row = await one<{ id: string; user_id: string; expires_at: string; used_at: string | null }>(
+    `SELECT id, user_id, expires_at, used_at
+       FROM password_reset_tokens WHERE token_hash = $1`,
+    [hashToken(parsed.data.token)]
+  );
+  if (!row) return res.status(400).json({ error: 'invalid_token' });
+  if (row.used_at) return res.status(400).json({ error: 'token_used' });
+  if (new Date(row.expires_at).getTime() < Date.now()) {
+    return res.status(400).json({ error: 'token_expired' });
+  }
+
+  const hash = await hashPassword(parsed.data.password);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [row.user_id, hash]);
+    await client.query(`UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1`, [row.id]);
+    // Revoke every other outstanding token for this user — a password
+    // change invalidates in-flight reset links by design.
+    await client.query(
+      `UPDATE password_reset_tokens SET used_at = NOW()
+        WHERE user_id = $1 AND used_at IS NULL`,
+      [row.user_id]
+    );
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.json({ ok: true });
 });
 
 export default r;

@@ -50,13 +50,25 @@ Seed admin: `admin@winery.com` / `admin123`.
 
 - `POST /api/auth/login`
 - `POST /api/auth/register` — partner self-registration (status=pending)
+- `POST /api/auth/telegram`, `POST /api/auth/telegram/onboard` — signed-initData login for the Mini App
+- `POST /api/auth/forgot-password` — request a reset link (always returns `{ok:true}`)
+- `POST /api/auth/reset-password` — consume the token + set a new password
 - `GET/PUT  /api/profile`
 - `GET/POST/PUT/DELETE /api/addresses`
 - `GET     /api/wines`
+- `POST /api/orders/parse` — LLM-parse partner's free-form text into catalog items
 - `GET/POST/PUT/DELETE /api/orders`, `GET /api/orders/:id/pdf`
-- `GET     /api/admin/orders`, `PUT /api/admin/orders/:id`, `PUT /api/admin/orders/:id/status`, `DELETE /api/admin/orders/:id`, `GET /api/admin/orders/:id/pdf`
+- `GET     /api/admin/orders`, `POST /api/admin/orders` (create on behalf of partner), `PUT /api/admin/orders/:id`, `PUT /api/admin/orders/:id/status`, `DELETE /api/admin/orders/:id`, `GET /api/admin/orders/:id/pdf`
+- `POST /api/admin/orders/parse`, `GET /api/admin/llm-check`
 - `GET/POST/PUT /api/admin/wines`
+- `GET/POST/PUT /api/admin/warehouses`, `POST /api/admin/warehouse-users`
 - `GET/POST/PUT /api/admin/partners`, `PUT /api/admin/partners/:id/status` (approve / reject)
+- `POST /api/admin/partners/:id/users` — add a login to an existing partner
+- `PUT /api/admin/partners/:pid/users/:uid` — edit email / phone / contact
+- `DELETE /api/admin/partners/:pid/users/:uid` — delete; refuses last-user (409) or self (409)
+- `POST /api/admin/partners/:pid/users/:uid/reset-password` — generate random password, return plaintext once
+- `POST /api/telegram/webhook` — inbound updates from Telegram (admin order bot + partner confirmations)
+- `GET  /api/cron/cleanup` — daily cleanup; Bearer-auth'd by `CRON_SECRET`
 
 ## Deploy (Vercel)
 
@@ -124,3 +136,25 @@ Production (after deploy):
 
 See **[INSTALL_PWA.md](./INSTALL_PWA.md)** — short UA guide for partners on
 how to add the app to their home screen (iOS Safari / Android Chrome).
+
+## Admin partner-user ops and password reset
+
+The admin-facing partner-user lifecycle (add / edit / delete / generate new
+password) and the self-service "forgot password" flow are described in
+**[ADMIN_USERS.md](./ADMIN_USERS.md)**. Migrations **007** (server runner)
+/ **012** (manual Supabase) must be applied once before the forgot-password
+endpoints will accept requests.
+
+## Scheduled jobs (Vercel Cron)
+
+`vercel.json` declares a single daily cron at 03:00 UTC that calls
+`GET /api/cron/cleanup`. The endpoint requires `Authorization: Bearer
+$CRON_SECRET` (Vercel injects this automatically on scheduled invokes) and
+deletes:
+
+- `pending_telegram_orders` older than 7 days, and
+- `password_reset_tokens` older than 1 day (reset TTL is 30 min, so 1 day
+  is well past stale for any token).
+
+`CRON_SECRET` must be set as a plain env var in Vercel. If it's missing,
+the endpoint refuses to run — safer than a world-readable cleanup route.
