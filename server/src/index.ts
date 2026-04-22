@@ -13,6 +13,15 @@ import cronRoutes from './routes/cron.js';
 export function createApp() {
   const app = express();
   app.use(cors());
+
+  // Voice / image upload endpoints carry base64-encoded payloads (~5-10MB
+  // for a phone photo). Mount the large-body parser on these paths
+  // explicitly so the other routes keep a tight 1MB attack surface.
+  const bigJson = express.json({ limit: '12mb' });
+  app.use('/api/orders/parse-voice', bigJson);
+  app.use('/api/orders/parse-image', bigJson);
+  app.use('/api/admin/orders/parse-voice', bigJson);
+  app.use('/api/admin/orders/parse-image', bigJson);
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { cacheGet, cacheSet } from '../cache';
+import { fileToBase64, IMAGE_MIME_TYPES, type ImageMediaType } from '../files';
 import type { Address, OrderDetail, Wine } from '../types';
 import { formatMoney } from '../format';
 
@@ -49,6 +50,8 @@ export function OrderForm({ orderId, initial, submitLabel }: Props) {
   const [parseBusy, setParseBusy] = useState(false);
   const [parseInfo, setParseInfo] = useState<string | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const voiceInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -99,6 +102,30 @@ export function OrderForm({ orderId, initial, submitLabel }: Props) {
     });
   }
 
+  function applyParsedItems(
+    items: { wine_id: string; quantity: number }[],
+    noteSuffix?: string
+  ): boolean {
+    const knownIds = new Set(wines.map((w) => w.id));
+    const next: Qty = {};
+    let recognized = 0;
+    for (const it of items) {
+      if (!knownIds.has(it.wine_id) || it.quantity <= 0) continue;
+      next[it.wine_id] = Math.floor(it.quantity);
+      recognized++;
+    }
+    if (recognized === 0) {
+      setParseError('Жодної позиції не впізнано. Спробуйте іншими словами або заповніть вручну.');
+      return false;
+    }
+    setQty(next);
+    setParseInfo(
+      `Розпізнано позицій: ${recognized}. Перевірте кількості нижче.` +
+        (noteSuffix ? ` ${noteSuffix}` : '')
+    );
+    return true;
+  }
+
   async function onParse() {
     setParseError(null);
     setParseInfo(null);
@@ -113,25 +140,79 @@ export function OrderForm({ orderId, initial, submitLabel }: Props) {
         '/orders/parse',
         { method: 'POST', body: { text } }
       );
-      const knownIds = new Set(wines.map((w) => w.id));
-      const next: Qty = {};
-      let recognized = 0;
-      for (const it of res.items) {
-        if (!knownIds.has(it.wine_id) || it.quantity <= 0) continue;
-        next[it.wine_id] = Math.floor(it.quantity);
-        recognized++;
-      }
-      if (recognized === 0) {
-        setParseError('Жодної позиції не впізнано. Спробуйте іншими словами або заповніть вручну.');
-        return;
-      }
-      setQty(next);
-      setParseInfo(`Розпізнано позицій: ${recognized}. Перевірте кількості нижче.`);
+      applyParsedItems(res.items);
     } catch (err) {
       if (err instanceof ApiError) {
         setParseError('Не вдалося розпізнати. Заповніть вручну.');
       } else {
         setParseError('Немає зв’язку з сервером.');
+      }
+    } finally {
+      setParseBusy(false);
+    }
+  }
+
+  async function onImagePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setParseError(null);
+    setParseInfo(null);
+    const mime = file.type;
+    if (!IMAGE_MIME_TYPES.includes(mime as ImageMediaType)) {
+      setParseError('Підтримуються JPG, PNG, WEBP або GIF. Цей формат не підходить.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setParseError('Фото занадто велике (>10 МБ). Стисніть і спробуйте ще раз.');
+      return;
+    }
+    setParseBusy(true);
+    try {
+      const image_base64 = await fileToBase64(file);
+      const res = await api<{ items: { wine_id: string; quantity: number }[] }>(
+        '/orders/parse-image',
+        { method: 'POST', body: { image_base64, media_type: mime } }
+      );
+      applyParsedItems(res.items, 'З фото/скріншота.');
+    } catch (err) {
+      if (err instanceof ApiError) setParseError('Не вдалося розпізнати зображення.');
+      else setParseError('Не вдалося прочитати файл.');
+    } finally {
+      setParseBusy(false);
+    }
+  }
+
+  async function onVoicePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setParseError(null);
+    setParseInfo(null);
+    if (file.size > 15 * 1024 * 1024) {
+      setParseError('Запис занадто великий (>15 МБ). Запишіть коротше повідомлення.');
+      return;
+    }
+    setParseBusy(true);
+    try {
+      const audio_base64 = await fileToBase64(file);
+      const res = await api<{ transcript: string; items: { wine_id: string; quantity: number }[] }>(
+        '/orders/parse-voice',
+        { method: 'POST', body: { audio_base64, mime: file.type || undefined } }
+      );
+      const suffix = res.transcript ? `Розпізнано: «${res.transcript}».` : undefined;
+      applyParsedItems(res.items, suffix);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.data?.error === 'voice_not_configured') {
+          setParseError('Голосовий ввід тимчасово недоступний.');
+        } else if (err.data?.error === 'empty_transcript') {
+          setParseError('Не вдалося розпізнати аудіо — тиша або нерозбірливо.');
+        } else {
+          setParseError('Не вдалося розпізнати голос.');
+        }
+      } else {
+        setParseError('Не вдалося прочитати файл.');
       }
     } finally {
       setParseBusy(false);
@@ -181,9 +262,10 @@ export function OrderForm({ orderId, initial, submitLabel }: Props) {
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       {isCreate && (
         <section className="card">
-          <h2 className="font-semibold text-burgundy-700 mb-2">Вставити текст замовлення</h2>
+          <h2 className="font-semibold text-burgundy-700 mb-2">Розпізнати замовлення</h2>
           <p className="text-xs text-neutral-500 mb-2">
-            Напр., «3 каберне, 2 шардоне». Нижче все одно можна відкоригувати кількості вручну.
+            Вставте текст, завантажте фото/скріншот замовлення або голосове повідомлення.
+            Кількості нижче потім можна відкоригувати вручну.
           </p>
           <textarea
             className="min-h-[96px] w-full p-3 rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
@@ -199,10 +281,42 @@ export function OrderForm({ orderId, initial, submitLabel }: Props) {
               disabled={parseBusy || !parseText.trim()}
               className="btn-secondary"
             >
-              {parseBusy ? 'Розпізнаю…' : 'Розпізнати'}
+              {parseBusy ? 'Розпізнаю…' : 'Розпізнати текст'}
             </button>
-            {parseInfo && <div className="text-xs text-neutral-600">{parseInfo}</div>}
-            {parseError && <div className="text-xs text-burgundy-700">{parseError}</div>}
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={parseBusy}
+              className="btn-secondary"
+              title="Фото або скріншот замовлення"
+            >
+              📎 Фото
+            </button>
+            <button
+              type="button"
+              onClick={() => voiceInputRef.current?.click()}
+              disabled={parseBusy}
+              className="btn-secondary"
+              title="Голосове повідомлення"
+            >
+              🎤 Голос
+            </button>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={onImagePicked}
+              className="hidden"
+            />
+            <input
+              ref={voiceInputRef}
+              type="file"
+              accept="audio/*"
+              onChange={onVoicePicked}
+              className="hidden"
+            />
+            {parseInfo && <div className="text-xs text-neutral-600 w-full">{parseInfo}</div>}
+            {parseError && <div className="text-xs text-burgundy-700 w-full">{parseError}</div>}
           </div>
         </section>
       )}

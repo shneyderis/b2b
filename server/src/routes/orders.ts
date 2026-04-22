@@ -4,7 +4,8 @@ import { one, pool, query } from '../db.js';
 import { requireAuth, requirePartner } from '../auth.js';
 import { streamOrderPdf } from '../pdf.js';
 import { notifyManagersNewOrder } from '../telegram.js';
-import { parseOrderText } from '../orderParser.js';
+import { parseOrderText, parseOrderImage } from '../orderParser.js';
+import { transcribeVoice, buildVoiceVocabPrompt } from '../voiceTranscriber.js';
 
 const r = Router();
 r.use(requireAuth, requirePartner);
@@ -67,6 +68,61 @@ r.post('/parse', async (req, res) => {
   try {
     const result = await parseOrderText(p.data.text);
     res.json({ items: result.items });
+  } catch (e: any) {
+    const status = typeof e?.status === 'number' ? e.status : 500;
+    res.status(status).json({
+      error: e?.message ?? 'parse_failed',
+      detail: e?.detail ?? null,
+    });
+  }
+});
+
+const imageSchema = z.object({
+  image_base64: z.string().min(1).max(15_000_000),
+  media_type: z.enum(['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+});
+
+r.post('/parse-image', async (req, res) => {
+  const p = imageSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  try {
+    const result = await parseOrderImage(p.data.image_base64, p.data.media_type);
+    res.json({ items: result.items });
+  } catch (e: any) {
+    const status = typeof e?.status === 'number' ? e.status : 500;
+    res.status(status).json({
+      error: e?.message ?? 'parse_failed',
+      detail: e?.detail ?? null,
+    });
+  }
+});
+
+const voiceSchema = z.object({
+  audio_base64: z.string().min(1).max(20_000_000),
+  mime: z.string().max(100).optional(),
+});
+
+r.post('/parse-voice', async (req, res) => {
+  const p = voiceSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(p.data.audio_base64, 'base64');
+  } catch {
+    return res.status(400).json({ error: 'invalid_base64' });
+  }
+  try {
+    const vocab = await buildVoiceVocabPrompt().catch(() => '');
+    const transcript = await transcribeVoice(buf, {
+      mime: p.data.mime,
+      language: 'uk',
+      prompt: vocab || undefined,
+    });
+    if (!transcript) {
+      return res.status(422).json({ error: 'empty_transcript' });
+    }
+    const parsed = await parseOrderText(transcript);
+    res.json({ transcript, items: parsed.items });
   } catch (e: any) {
     const status = typeof e?.status === 'number' ? e.status : 500;
     res.status(status).json({
