@@ -7,6 +7,17 @@ Minimal web app for HoReCa partners to order wines from the winery.
 
 UI language: Ukrainian (українська).
 
+## Documentation map
+
+| File | Audience | What's inside |
+|---|---|---|
+| [GUIDE_PARTNER.md](./GUIDE_PARTNER.md) | Partners (UA) | Як увійти, створити замовлення, скинути пароль. |
+| [GUIDE_ADMIN.md](./GUIDE_ADMIN.md) | Admins / managers (UA) | Схвалення партнерів, керування логінами, каталогом і складом, бот. |
+| [INSTALL_PWA.md](./INSTALL_PWA.md) | Partners (UA) | Як додати застосунок на головний екран телефону. |
+| [ADMIN_USERS.md](./ADMIN_USERS.md) | Technical | Admin user-ops + self-service password reset — flow, error codes, token security. |
+| [TELEGRAM_ADMIN_BOT.md](./TELEGRAM_ADMIN_BOT.md) | Technical | BotFather setup, webhook, admin bot usage. |
+| [TELEGRAM_MINIAPP.md](./TELEGRAM_MINIAPP.md) | Technical | Mini App auth flow, onboarding, phone matching. |
+
 ## Stack
 
 - **Frontend:** React (Vite) + TypeScript + Tailwind CSS, PWA (manifest + service worker)
