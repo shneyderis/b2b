@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { ApiError } from '../api';
 
@@ -110,6 +110,9 @@ export function Login() {
             <button type="submit" className="btn-primary" disabled={busy}>
               {busy ? 'Вхід…' : 'Увійти'}
             </button>
+            <Link to="/forgot-password" className="text-sm text-center text-neutral-600 hover:text-burgundy-700">
+              Забули пароль?
+            </Link>
           </form>
         )}
       </div>

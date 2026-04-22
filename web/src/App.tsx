@@ -4,6 +4,8 @@ import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { ResetPassword } from './pages/ResetPassword';
 import { Profile } from './pages/Profile';
 import { Orders } from './pages/Orders';
 import { OrderDetail } from './pages/OrderDetail';
@@ -15,6 +17,7 @@ import { AdminOrderDetail } from './pages/admin/OrderDetail';
 import { AdminWines } from './pages/admin/Wines';
 import { AdminPartners } from './pages/admin/Partners';
 import { AdminWarehouses } from './pages/admin/Warehouses';
+import { AdminSettings } from './pages/admin/Settings';
 import { WarehouseOrders } from './pages/warehouse/Orders';
 import { WarehouseOrderDetail } from './pages/warehouse/OrderDetail';
 
@@ -33,6 +36,8 @@ export function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route
             element={
               <ProtectedRoute>
@@ -127,6 +132,14 @@ export function App() {
               element={
                 <ProtectedRoute role="admin">
                   <AdminWarehouses />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/settings"
+              element={
+                <ProtectedRoute role="admin">
+                  <AdminSettings />
                 </ProtectedRoute>
               }
             />

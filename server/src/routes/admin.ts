@@ -5,7 +5,8 @@ import { one, pool, query } from '../db.js';
 import { requireAdmin, requireAuth, hashPassword } from '../auth.js';
 import { streamOrderPdf } from '../pdf.js';
 import { notifyPartnerStatusChange, notifyWarehouseOrderConfirmed } from '../telegram.js';
-import { parseOrderText } from '../orderParser.js';
+import { parseOrderText, parseOrderImage } from '../orderParser.js';
+import { transcribeVoice, buildVoiceVocabPrompt } from '../voiceTranscriber.js';
 import { createAdminOrder, AdminOrderError } from '../adminOrders.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../env.js';
@@ -184,6 +185,59 @@ r.post('/orders/parse', async (req, res) => {
   try {
     const result = await parseOrderText(p.data.text);
     res.json(result);
+  } catch (e: any) {
+    const status = typeof e?.status === 'number' ? e.status : 500;
+    res.status(status).json({
+      error: e?.message ?? 'parse_failed',
+      detail: e?.detail ?? null,
+    });
+  }
+});
+
+const adminImageSchema = z.object({
+  image_base64: z.string().min(1).max(15_000_000),
+  media_type: z.enum(['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+});
+
+r.post('/orders/parse-image', async (req, res) => {
+  const p = adminImageSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  try {
+    const result = await parseOrderImage(p.data.image_base64, p.data.media_type);
+    res.json(result);
+  } catch (e: any) {
+    const status = typeof e?.status === 'number' ? e.status : 500;
+    res.status(status).json({
+      error: e?.message ?? 'parse_failed',
+      detail: e?.detail ?? null,
+    });
+  }
+});
+
+const adminVoiceSchema = z.object({
+  audio_base64: z.string().min(1).max(20_000_000),
+  mime: z.string().max(100).optional(),
+});
+
+r.post('/orders/parse-voice', async (req, res) => {
+  const p = adminVoiceSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: 'invalid input' });
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(p.data.audio_base64, 'base64');
+  } catch {
+    return res.status(400).json({ error: 'invalid_base64' });
+  }
+  try {
+    const vocab = await buildVoiceVocabPrompt().catch(() => '');
+    const transcript = await transcribeVoice(buf, {
+      mime: p.data.mime,
+      language: 'uk',
+      prompt: vocab || undefined,
+    });
+    if (!transcript) return res.status(422).json({ error: 'empty_transcript' });
+    const parsed = await parseOrderText(transcript);
+    res.json({ transcript, ...parsed });
   } catch (e: any) {
     const status = typeof e?.status === 'number' ? e.status : 500;
     res.status(status).json({

@@ -114,6 +114,20 @@ export async function notifyPartnerStatusChange(orderId: string, status: string)
   await sendTelegram(row.telegram_id, text);
 }
 
+export async function notifyPasswordReset(
+  telegramId: string,
+  resetUrl: string,
+  email: string
+): Promise<void> {
+  const text =
+    `<b>🔑 Скидання паролю</b>\n\n` +
+    `Хтось запросив скидання паролю для ${escapeHtml(email)}.\n` +
+    `Якщо це були ви — перейдіть за посиланням (діє 30 хвилин):\n\n` +
+    `${escapeHtml(resetUrl)}\n\n` +
+    `Якщо це не ви — просто проігноруйте це повідомлення.`;
+  await sendTelegram(telegramId, text);
+}
+
 export async function notifyWarehouseOrderConfirmed(orderId: string): Promise<void> {
   const order = await one<{
     order_number: number;

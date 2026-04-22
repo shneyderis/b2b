@@ -1,8 +1,14 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../../api';
+import { fileToBase64, IMAGE_MIME_TYPES, type ImageMediaType } from '../../files';
 import type { AdminPartner, AdminWine } from '../../types';
 import { formatMoney } from '../../format';
+
+type ParseResult = {
+  partner_hint: string | null;
+  items: { wine_id: string; quantity: number }[];
+};
 
 type Qty = Record<string, number>;
 
@@ -24,6 +30,8 @@ export function AdminNewOrder() {
   const [parseBusy, setParseBusy] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [parseInfo, setParseInfo] = useState<string[] | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const voiceInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -134,6 +142,53 @@ export function AdminNewOrder() {
       .sort((a, b) => a.name.length - b.name.length);
   }
 
+  function applyParseResult(res: ParseResult, prefixMessages: string[] = []): boolean {
+    const messages = [...prefixMessages];
+
+    if (res.partner_hint) {
+      const matches = matchPartner(res.partner_hint);
+      if (matches.length === 1) {
+        onPartnerChange(matches[0].id);
+        messages.push(`Партнер: ${matches[0].name}.`);
+      } else if (matches.length > 1) {
+        messages.push(`Знайдено кілька партнерів для «${res.partner_hint}» — оберіть вручну.`);
+      } else {
+        messages.push(`Партнера «${res.partner_hint}» не знайдено — оберіть вручну.`);
+      }
+    } else {
+      messages.push('Партнер не вказаний — оберіть вручну.');
+    }
+
+    const knownIds = new Set(availableWines.map((w) => w.id));
+    const next: Qty = {};
+    for (const it of res.items) {
+      if (!knownIds.has(it.wine_id)) continue;
+      next[it.wine_id] = (next[it.wine_id] ?? 0) + it.quantity;
+    }
+    if (Object.keys(next).length === 0) {
+      setParseError('Не вдалося розпізнати жодної позиції з каталогу.');
+      return false;
+    }
+    setQty(next);
+    const total = Object.values(next).reduce((s, n) => s + n, 0);
+    messages.push(`Додано ${Object.keys(next).length} позицій, ${total} шт.`);
+    setParseInfo(messages);
+    return true;
+  }
+
+  function handleParseError(err: unknown) {
+    if (err instanceof ApiError && err.status === 503) {
+      setParseError('LLM або розпізнавання голосу не налаштовані на сервері.');
+    } else if (err instanceof ApiError && err.data?.error === 'empty_transcript') {
+      setParseError('Не вдалося розпізнати аудіо — тиша або нерозбірливо.');
+    } else if (err instanceof ApiError) {
+      const detail = err.data?.detail || err.data?.error || err.message;
+      setParseError(`Не вдалося розпізнати: ${detail}`);
+    } else {
+      setParseError('Немає зв’язку з сервером.');
+    }
+  }
+
   async function onParse() {
     setParseError(null);
     setParseInfo(null);
@@ -144,50 +199,66 @@ export function AdminNewOrder() {
     }
     setParseBusy(true);
     try {
-      const res = await api<{ partner_hint: string | null; items: { wine_id: string; quantity: number }[] }>(
-        '/admin/orders/parse',
-        { method: 'POST', body: { text } }
-      );
-
-      const messages: string[] = [];
-
-      if (res.partner_hint) {
-        const matches = matchPartner(res.partner_hint);
-        if (matches.length === 1) {
-          onPartnerChange(matches[0].id);
-          messages.push(`Партнер: ${matches[0].name}.`);
-        } else if (matches.length > 1) {
-          messages.push(`Знайдено кілька партнерів для «${res.partner_hint}» — оберіть вручну.`);
-        } else {
-          messages.push(`Партнера «${res.partner_hint}» не знайдено — оберіть вручну.`);
-        }
-      } else {
-        messages.push('Партнер у тексті не вказаний — оберіть вручну.');
-      }
-
-      const knownIds = new Set(availableWines.map((w) => w.id));
-      const next: Qty = {};
-      for (const it of res.items) {
-        if (!knownIds.has(it.wine_id)) continue;
-        next[it.wine_id] = (next[it.wine_id] ?? 0) + it.quantity;
-      }
-      if (Object.keys(next).length === 0) {
-        setParseError('Не вдалося розпізнати жодної позиції з каталогу.');
-        return;
-      }
-      setQty(next);
-      const total = Object.values(next).reduce((s, n) => s + n, 0);
-      messages.push(`Додано ${Object.keys(next).length} позицій, ${total} шт.`);
-      setParseInfo(messages);
+      const res = await api<ParseResult>('/admin/orders/parse', { method: 'POST', body: { text } });
+      applyParseResult(res);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 503) {
-        setParseError('LLM не налаштовано на сервері.');
-      } else if (err instanceof ApiError) {
-        const detail = err.data?.detail || err.data?.error || err.message;
-        setParseError(`Не вдалося розпізнати: ${detail}`);
-      } else {
-        setParseError('Немає зв’язку з сервером.');
-      }
+      handleParseError(err);
+    } finally {
+      setParseBusy(false);
+    }
+  }
+
+  async function onImagePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setParseError(null);
+    setParseInfo(null);
+    const mime = file.type;
+    if (!IMAGE_MIME_TYPES.includes(mime as ImageMediaType)) {
+      setParseError('Підтримуються JPG, PNG, WEBP або GIF.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setParseError('Фото занадто велике (>10 МБ).');
+      return;
+    }
+    setParseBusy(true);
+    try {
+      const image_base64 = await fileToBase64(file);
+      const res = await api<ParseResult>('/admin/orders/parse-image', {
+        method: 'POST',
+        body: { image_base64, media_type: mime },
+      });
+      applyParseResult(res, ['З фото/скріншота.']);
+    } catch (err) {
+      handleParseError(err);
+    } finally {
+      setParseBusy(false);
+    }
+  }
+
+  async function onVoicePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setParseError(null);
+    setParseInfo(null);
+    if (file.size > 15 * 1024 * 1024) {
+      setParseError('Запис занадто великий (>15 МБ).');
+      return;
+    }
+    setParseBusy(true);
+    try {
+      const audio_base64 = await fileToBase64(file);
+      const res = await api<ParseResult & { transcript: string }>('/admin/orders/parse-voice', {
+        method: 'POST',
+        body: { audio_base64, mime: file.type || undefined },
+      });
+      const prefix = res.transcript ? [`Розпізнано: «${res.transcript}».`] : [];
+      applyParseResult(res, prefix);
+    } catch (err) {
+      handleParseError(err);
     } finally {
       setParseBusy(false);
     }
@@ -204,10 +275,10 @@ export function AdminNewOrder() {
       </div>
 
       <section className="card">
-        <h2 className="font-semibold text-burgundy-700 mb-1">Розпізнати з тексту</h2>
+        <h2 className="font-semibold text-burgundy-700 mb-1">Розпізнати замовлення</h2>
         <p className="text-sm text-neutral-600 mb-3">
-          Вставте SMS, лист або просто надиктуйте у будь-якій формі — LLM підставить партнера й
-          позиції у форму нижче. Потім можна доправити руками.
+          Вставте текст / лист, завантажте фото або скріншот переписки, або голосовий запис —
+          LLM підставить партнера й позиції у форму нижче. Потім можна доправити руками.
         </p>
         <textarea
           className="min-h-[110px] w-full p-3 rounded-lg border border-neutral-300 bg-white focus:outline-none focus:ring-2 focus:ring-burgundy-500"
@@ -217,15 +288,47 @@ export function AdminNewOrder() {
           disabled={parseBusy}
           placeholder="Напр.: «Артанія: 3 каберне, 2 шардоне, будь ласка»"
         />
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={onParse}
             disabled={parseBusy || !parseText.trim()}
             className="btn-primary px-4"
           >
-            {parseBusy ? 'Обробляємо…' : 'Розпізнати'}
+            {parseBusy ? 'Обробляємо…' : 'Розпізнати текст'}
           </button>
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={parseBusy}
+            className="btn-secondary px-4"
+            title="Фото або скріншот замовлення"
+          >
+            📎 Фото
+          </button>
+          <button
+            type="button"
+            onClick={() => voiceInputRef.current?.click()}
+            disabled={parseBusy}
+            className="btn-secondary px-4"
+            title="Голосове повідомлення"
+          >
+            🎤 Голос
+          </button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            onChange={onImagePicked}
+            className="hidden"
+          />
+          <input
+            ref={voiceInputRef}
+            type="file"
+            accept="audio/*"
+            onChange={onVoicePicked}
+            className="hidden"
+          />
           {parseText && !parseBusy && (
             <button
               type="button"

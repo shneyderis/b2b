@@ -421,10 +421,7 @@ function adminKeyboard(): Record<string, unknown> | null {
         { text: '📋 Замовлення', web_app: { url: `${base}/admin/orders` } },
         { text: '👥 Партнери', web_app: { url: `${base}/admin/partners` } },
       ],
-      [
-        { text: '🍷 Вина', web_app: { url: `${base}/admin/wines` } },
-        { text: '📦 Склад', web_app: { url: `${base}/admin/warehouses` } },
-      ],
+      [{ text: '⚙️ Налаштування', web_app: { url: `${base}/admin/settings` } }],
     ],
     resize_keyboard: true,
     is_persistent: true,

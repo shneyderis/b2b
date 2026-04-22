@@ -17,11 +17,20 @@ r.get('/cleanup', async (req, res) => {
   if (!ok(req.header('authorization'))) {
     return res.status(401).json({ error: 'unauthorized' });
   }
-  const result = await pool.query(
+  const pending = await pool.query(
     `DELETE FROM pending_telegram_orders
       WHERE created_at < NOW() - INTERVAL '7 days'`
   );
-  res.json({ deleted: result.rowCount ?? 0 });
+  // Reset tokens live for 30 min but we only prune them daily; anything
+  // older than 24h is definitely stale (used or expired) and safe to drop.
+  const tokens = await pool.query(
+    `DELETE FROM password_reset_tokens
+      WHERE created_at < NOW() - INTERVAL '1 day'`
+  );
+  res.json({
+    pending_orders_deleted: pending.rowCount ?? 0,
+    reset_tokens_deleted: tokens.rowCount ?? 0,
+  });
 });
 
 export default r;
