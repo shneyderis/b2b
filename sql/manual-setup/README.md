@@ -12,7 +12,7 @@ below is a copy of what those scripts do, with bcrypt password hashes for
 2. **New query** → paste `002_seed.sql` → **Run**. Wipes the tables and
    populates them with the demo dataset (admin, 19 wines, 4 partners incl.
    1 pending, addresses, 6 demo orders in various statuses).
-3. **Each subsequent numbered file** (`003_…` through `012_…`) is an
+3. **Each subsequent numbered file** (`003_…` through `013_…`) is an
    incremental schema change — paste and run in filename order. All are
    idempotent. You only need to re-run the ones newer than what's already
    on the database.
@@ -32,6 +32,7 @@ rolls back.
 | `010_partners_trgm.sql` | `pg_trgm` index for fuzzy partner lookup in the bot. |
 | `011_users_telegram_unique.sql` | Nullifies duplicate `telegram_id`s (admin > warehouse > partner) and adds `UNIQUE` constraint. Safe to re-run. |
 | `012_password_reset_tokens.sql` | Table for self-service «Забули пароль?» tokens. Required by `/api/auth/forgot-password`. |
+| `013_enable_rls.sql` | Enables RLS on every `public` table (closes the PostgREST/anon-key path). No policies — the server connects as the table owner and is unaffected. Safe to re-run. |
 
 ## Credentials after seed
 
